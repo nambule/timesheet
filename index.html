@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Timesheet Codex</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+  <meta name="theme-color" content="#0f172a" />
+</head>
+<body>
+  <header class="app-header">
+    <div class="brand">
+      <div class="logo" aria-hidden="true">⏱️</div>
+      <div class="title">Timesheet</div>
+    </div>
+    <div class="toolbar">
+      <button id="btnPrevDay" class="secondary" title="Jour précédent (h / Ctrl+←)">←</button>
+      <input id="datePicker" type="date" aria-label="Date" />
+      <button id="btnNextDay" class="secondary" title="Jour suivant (l / Ctrl+→)">→</button>
+      <button id="btnSettings" class="secondary" title="Gérer les projets">Réglages</button>
+      <button id="btnSummary" class="secondary" title="Voir récapitulatif">Récap</button>
+      <button id="btnExport" class="secondary" title="Exporter CSV">Export CSV</button>
+      <button id="btnExportFullYear" class="secondary" title="Exporter CSV année complète">Export CSV Année</button>
+    </div>
+  </header>
+
+  <main class="content">
+    <section class="entries">
+      <div class="quick-select">
+        <button class="quick-btn" data-project="CPO">CPO</button>
+        <button class="quick-btn" data-project="PM">PM</button>
+        <button class="quick-btn" data-project="FER">FER</button>
+        <button class="quick-btn" data-project="CDA">CDA</button>
+        <button class="quick-btn" data-project="NOV">NOV</button>
+        <button class="quick-btn" data-project="MRH">MRH</button>
+        <button class="quick-btn" data-project="ADM">ADM</button>
+        <button class="quick-comment-btn" data-comment="IA">IA</button>
+        <button class="quick-comment-btn" data-comment="GTA">GTA</button>
+        <button class="quick-comment-btn" data-comment="KM">KM</button>
+        <button class="quick-comment-btn" data-comment="RGPD">RGPD</button>
+        <button class="quick-comment-btn" data-comment="GESTPROC">GESTPROC</button>
+      </div>
+      <div class="btn-row">
+        <button id="btnAdd" class="primary btn-add-large" title="Ajouter une entrée (a)">+ Ajouter une entrée</button>
+        <button id="btnAddBreak" class="btn-pause btn-add-large" title="Ajouter une pause">◯ Pause</button>
+      </div>
+      <div class="entries-header">
+        <div class="col col-start">Début</div>
+        <div class="col col-project">Projet</div>
+        <div class="col col-spacer" aria-hidden="true"></div>
+        <div class="col col-comment">Commentaire</div>
+        <div class="col col-duration">Durée</div>
+        <div class="col col-actions" aria-hidden="true"></div>
+      </div>
+      <div id="entryList" class="entry-list" role="list" aria-label="Entrées de temps du jour"></div>
+    </section>
+
+    <section class="summary" id="summarySection" hidden>
+      <h2>Récapitulatif du jour</h2>
+      <div id="summaryList" class="summary-list"></div>
+      <div class="summary-footer">
+        <div id="summaryTotal" class="summary-total"></div>
+        <button id="btnCloseSummary" class="secondary">Fermer</button>
+      </div>
+    </section>
+  </main>
+
+
+  <template id="entryTemplate">
+    <div class="entry" role="listitem" data-id="">
+      <div class="field start">
+        <div class="time-controls">
+          <button class="btn-start-dec" title="Début -15 min">−</button>
+          <input type="text" class="input-start" placeholder="hh:mm" aria-label="Heure de début" inputmode="numeric" />
+          <button class="btn-start-inc" title="Début +15 min">+</button>
+        </div>
+      </div>
+
+      <div class="field project">
+        <input type="text" class="input-project" placeholder="Nom du projet" aria-label="Projet" list="projectList" />
+      </div>
+
+      <div class="field spacer" aria-hidden="true"></div>
+
+      <div class="field comment">
+        <input type="text" class="input-comment" placeholder="Commentaire" aria-label="Commentaire" list="commentList" />
+      </div>
+
+      <div class="field duration">
+        <div class="duration-controls">
+          <div class="duration-min" aria-hidden="true">00:00</div>
+        </div>
+      </div>
+
+      <div class="field actions">
+        <button class="btn-del" title="Supprimer">×</button>
+      </div>
+    </div>
+  </template>
+
+  <datalist id="projectList"></datalist>
+  <datalist id="commentList"></datalist>
+
+  <!-- Settings modal -->
+  <div id="settingsModal" class="modal-overlay" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+      <div class="modal-header">
+        <h2 id="settingsTitle">Réglages — Projets</h2>
+        <button id="btnCloseSettings" class="secondary" title="Fermer">✕</button>
+      </div>
+      <section class="settings" id="settingsSection">
+        <div class="settings-add">
+          <input type="text" id="newProjectInput" placeholder="Nouveau projet" aria-label="Nouveau projet" />
+          <button id="btnAddProject" class="primary">Ajouter</button>
+        </div>
+        <div id="settingsList" class="settings-list" aria-label="Liste des projets"></div>
+      </section>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

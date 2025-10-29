@@ -1,0 +1,7 @@
+0000000000000000000000000000000000000000 fd34c4dc151077f2dba1dbb21ab80d889fdcb8a1 Ced <ced@Ceds-MacBook-Pro-2.local> 1758054731 +0200	commit (initial): Initial commit
+fd34c4dc151077f2dba1dbb21ab80d889fdcb8a1 b663d1ba73202d5f6acb523a94fe17597f5455cb Ced <ced@Ceds-MacBook-Pro-2.local> 1758264543 +0200	commit: Version 2
+b663d1ba73202d5f6acb523a94fe17597f5455cb b663d1ba73202d5f6acb523a94fe17597f5455cb Ced <ced@Ceds-MacBook-Pro-2.local> 1758264624 +0200	Branch: renamed refs/heads/master to refs/heads/main
+b663d1ba73202d5f6acb523a94fe17597f5455cb 9465b1294611751f5baaeebbf872cdd95eeee68d Ced <ced@Ceds-MacBook-Pro-2.local> 1759528212 +0200	commit: Defer start-time resorting to avoid mid-edit row jumps
+9465b1294611751f5baaeebbf872cdd95eeee68d b85129b158a1ee563189f3b9d73384f357366f52 Ced <ced@Ceds-MacBook-Pro-2.local> 1761251019 +0200	commit: Align start column and enforce unique times
+b85129b158a1ee563189f3b9d73384f357366f52 3351ed2f62b84f59fc2fd7416098ecae269334cc Ced <ced@Ceds-MacBook-Pro-2.local> 1761634276 +0100	commit: Update app files
+3351ed2f62b84f59fc2fd7416098ecae269334cc f01b4073e81003f32db4de53b4d02b0832b2846d Kilo Code <noreply@example.com> 1761774584 +0100	reset: moving to f01b4073e81003f32db4de53b4d02b0832b2846d
