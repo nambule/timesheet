@@ -4,7 +4,8 @@ const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
 const START_SORT_DEBOUNCE_MS = 400;
-const IMMEDIATE_SORT_TRIGGERS = ['btn-start-inc', 'btn-start-dec'];
+const REORDER_PREMOVE_DELAY_MS = 1000;
+const REORDER_LANDING_MS = 700;
 
 // -------- Data Model --------
 // Entry: { id, project, comment, minutes, start }
@@ -214,7 +215,11 @@ const state = {
   sortPendingFocusId: null,
   sortPendingControlSelector: null,
   // Enhanced reordering tracking
-  isImmediateSort: false,
+  pendingMoveId: null,
+  pendingMoveDirection: null,
+  reorderDelayHandle: null,
+  reorderCleanupHandle: null,
+  reorderToken: 0,
   movementDirection: null, // 'up' or 'down'
   lastSortedEntry: null, // Track last moved entry for animation
   showMovementIndicators: true,
@@ -244,6 +249,18 @@ function render(){
     const node = tmpl.content.firstElementChild.cloneNode(true);
     node.dataset.id = e.id;
     if(state.focusedId === e.id) node.classList.add('focused');
+    const isPendingMove = state.pendingMoveId === e.id;
+    const isJustSorted = state.lastSortedEntry === e.id;
+    const movementDirection = (isPendingMove ? state.pendingMoveDirection : state.movementDirection);
+    if((isPendingMove || isJustSorted) && movementDirection){
+      node.classList.add(movementDirection === 'up' ? 'moving-up' : 'moving-down');
+    }
+    if(isPendingMove){
+      node.classList.add('reorder-waiting');
+    }
+    if(isJustSorted){
+      node.classList.add('just-sorted', 'focused-after-sort');
+    }
     // Style "Pause" entries differently (case-insensitive match on project)
     const isPause = ((e.project||'').trim().toLowerCase() === 'pause');
     if(isPause) node.classList.add('pause');
@@ -264,6 +281,12 @@ function render(){
     if(minsEl) minsEl.textContent = minutesToHHMM(visibleMinutes(e));
 
     // no running visual (timer removed)
+    if((isPendingMove || isJustSorted) && state.showMovementIndicators){
+      const movementIndicator = document.createElement('div');
+      movementIndicator.className = 'movement-indicator';
+      movementIndicator.setAttribute('aria-hidden', 'true');
+      node.appendChild(movementIndicator);
+    }
 
     // Events
     // Project typing
@@ -462,17 +485,7 @@ function renderGhostPlaceholder(list){
 }
 
 function resortEntriesWithGhost(entryId){
-  const snapshot = entryId ? captureGhostPlaceholderSnapshot(entryId) : null;
-  sortEntriesByStartInPlace();
-  persist();
-  if(snapshot && entryId){
-    const newIndex = state.data.entries.findIndex(entry => entry.id === entryId);
-    if(newIndex !== -1 && newIndex !== snapshot.index){
-      state.ghostPlaceholder = snapshot;
-    }
-  }
-  render();
-  updateSummaryUI();
+  performEnhancedSort(entryId);
 }
 
 // No custom popover suggestions; rely on native datalist
@@ -533,8 +546,6 @@ function scheduleDeferredSort(focusId, controlSelector, isImmediate = false){
   }
   
   if(isImmediate){
-    // Immediate sorting for quick adjustments
-    state.isImmediateSort = true;
     performEnhancedSort(focusId, controlSelector);
   } else {
     // Debounced sorting for manual typing
@@ -557,64 +568,49 @@ function cancelDeferredSort(){
   state.sortPending = false;
   state.sortPendingFocusId = null;
   state.sortPendingControlSelector = null;
-  state.isImmediateSort = false;
+  cancelPendingReorder();
 }
 
-function performEnhancedSort(focusId, controlSelector, movementDirection = null){
+function performEnhancedSort(focusId, controlSelector){
   const entryList = $('#entryList');
-  const placeholderSnapshot = focusId ? captureGhostPlaceholderSnapshot(focusId) : null;
-  
-  // Show visual feedback during sorting
+  const movePlan = focusId ? planEntryMove(focusId) : null;
+  const placeholderSnapshot = movePlan?.willMove ? captureGhostPlaceholderSnapshot(focusId) : null;
+  const token = ++state.reorderToken;
+
+  cancelPendingReorder();
+
   if(entryList){
     entryList.classList.add('sorting');
   }
-  
-  // Track the entry being moved for animation
-  if(focusId && movementDirection){
-    state.movementDirection = movementDirection;
-    state.lastSortedEntry = focusId;
+
+  if(!movePlan || !movePlan.willMove){
+    runSortedRender({
+      focusId,
+      controlSelector,
+      placeholderSnapshot: null,
+      movementDirection: null,
+      token,
+    });
+    return;
   }
-  
-  // Perform the actual sorting
-  sortEntriesByStartInPlace();
-  persist();
-  if(placeholderSnapshot && focusId){
-    const newIndex = state.data.entries.findIndex(entry => entry.id === focusId);
-    if(newIndex !== -1 && newIndex !== placeholderSnapshot.index){
-      state.ghostPlaceholder = placeholderSnapshot;
-    }
-  }
-  
-  // Render with animation
+
+  state.pendingMoveId = focusId;
+  state.pendingMoveDirection = movePlan.direction;
   render();
   updateSummaryUI();
-  
-  // Clean up visual feedback
-  if(entryList){
-    setTimeout(() => {
-      entryList.classList.remove('sorting');
-    }, 300);
-  }
-  
-  // Enhanced focus management
-  if(focusId){
-    const row = findRow(focusId);
-    if(row){
-      // Add focus animation
-      row.classList.add('focused-after-sort');
-      
-      // Focus the appropriate control
-      if(controlSelector){
-        const btn = row.querySelector(controlSelector);
-        btn?.focus();
-      }
-      
-      // Remove animation class after animation completes
-      setTimeout(() => {
-        row.classList.remove('focused-after-sort');
-      }, 800);
-    }
-  }
+
+  state.reorderDelayHandle = setTimeout(()=>{
+    if(token !== state.reorderToken) return;
+    state.pendingMoveId = null;
+    state.pendingMoveDirection = null;
+    runSortedRender({
+      focusId,
+      controlSelector,
+      placeholderSnapshot,
+      movementDirection: movePlan.direction,
+      token,
+    });
+  }, REORDER_PREMOVE_DELAY_MS);
 }
 
 function flushDeferredSort(){
@@ -628,43 +624,7 @@ function flushDeferredSort(){
   const controlSelector = state.sortPendingControlSelector;
   state.sortPendingFocusId = null;
   state.sortPendingControlSelector = null;
-  const placeholderSnapshot = focusId ? captureGhostPlaceholderSnapshot(focusId) : null;
-  
-  // Add visual feedback during reordering
-  const entryList = $('#entryList');
-  if(entryList){
-    entryList.classList.add('sorting');
-  }
-  
-  // Small delay to show the sorting state
-  setTimeout(() => {
-    sortEntriesByStartInPlace();
-    persist();
-    if(placeholderSnapshot && focusId){
-      const newIndex = state.data.entries.findIndex(entry => entry.id === focusId);
-      if(newIndex !== -1 && newIndex !== placeholderSnapshot.index){
-        state.ghostPlaceholder = placeholderSnapshot;
-      }
-    }
-    render();
-    updateSummaryUI();
-    
-    if(entryList){
-      entryList.classList.remove('sorting');
-    }
-    
-    if(focusId){
-      const row = findRow(focusId);
-      // Keep the same row highlighted/focused after resort
-      if(row){
-        row.classList.add('focused');
-        if(controlSelector){
-          const btn = row.querySelector(controlSelector);
-          btn?.focus();
-        }
-      }
-    }
-  }, 150);
+  performEnhancedSort(focusId, controlSelector);
 }
 
 function adjustMinutes(id, delta){
@@ -712,10 +672,106 @@ function adjustStart(id, delta){
   st.lastDir = dir; st.at = nowTs; state.roundingStart[id] = st;
   persist();
   
-  // Determine movement direction for immediate visual feedback
-  const newIndex = state.data.entries.findIndex(entry => entry.id === e.id);
-  // For immediate feedback, we'll sort and render immediately for +/- button clicks
-  performEnhancedSort(e.id, delta >= 0 ? '.btn-start-inc' : '.btn-start-dec', dir > 0 ? 'down' : 'up');
+  performEnhancedSort(e.id, delta >= 0 ? '.btn-start-inc' : '.btn-start-dec');
+}
+
+function cancelPendingReorder(){
+  if(state.reorderDelayHandle){
+    clearTimeout(state.reorderDelayHandle);
+    state.reorderDelayHandle = null;
+  }
+  if(state.reorderCleanupHandle){
+    clearTimeout(state.reorderCleanupHandle);
+    state.reorderCleanupHandle = null;
+  }
+  state.pendingMoveId = null;
+  state.pendingMoveDirection = null;
+  state.lastSortedEntry = null;
+  state.movementDirection = null;
+  const entryList = $('#entryList');
+  if(entryList){
+    entryList.classList.remove('sorting');
+  }
+}
+
+function compareEntriesByStart(a, b){
+  const as = /^\d{1,2}:\d{2}$/.test(a.e.start || '');
+  const bs = /^\d{1,2}:\d{2}$/.test(b.e.start || '');
+  if(as && bs){
+    const da = hhmmToMinutes(a.e.start);
+    const db = hhmmToMinutes(b.e.start);
+    if(da !== db) return db - da;
+    return a.i - b.i;
+  }
+  if(as && !bs) return 1;
+  if(!as && bs) return -1;
+  return a.i - b.i;
+}
+
+function planEntryMove(entryId){
+  const currentIndex = state.data.entries.findIndex(entry => entry.id === entryId);
+  if(currentIndex === -1) return null;
+  const withIdx = state.data.entries.map((e, i)=> ({ e, i }));
+  withIdx.sort(compareEntriesByStart);
+  const newIndex = withIdx.findIndex(item => item.e.id === entryId);
+  if(newIndex === -1) return null;
+  return {
+    currentIndex,
+    newIndex,
+    willMove: newIndex !== currentIndex,
+    direction: newIndex < currentIndex ? 'up' : 'down',
+  };
+}
+
+function runSortedRender({ focusId, controlSelector, placeholderSnapshot, movementDirection, token }){
+  sortEntriesByStartInPlace();
+  persist();
+  if(placeholderSnapshot && focusId){
+    const newIndex = state.data.entries.findIndex(entry => entry.id === focusId);
+    if(newIndex !== -1 && newIndex !== placeholderSnapshot.index){
+      state.ghostPlaceholder = placeholderSnapshot;
+    }
+  }
+
+  state.lastSortedEntry = movementDirection ? focusId : null;
+  state.movementDirection = movementDirection;
+  render();
+  updateSummaryUI();
+  restoreSortedFocus(focusId, controlSelector);
+
+  state.reorderDelayHandle = null;
+  state.reorderCleanupHandle = setTimeout(()=>{
+    if(token !== state.reorderToken) return;
+    state.lastSortedEntry = null;
+    state.movementDirection = null;
+    const row = focusId ? findRow(focusId) : null;
+    row?.classList.remove('moving-up', 'moving-down', 'just-sorted', 'focused-after-sort');
+    const entryList = $('#entryList');
+    entryList?.classList.remove('sorting');
+    state.reorderCleanupHandle = null;
+  }, movementDirection ? REORDER_LANDING_MS : 0);
+}
+
+function restoreSortedFocus(focusId, controlSelector){
+  if(!focusId) return;
+  const row = findRow(focusId);
+  if(!row) return;
+  if(controlSelector){
+    const control = row.querySelector(controlSelector);
+    control?.focus();
+    return;
+  }
+
+  const fieldSelector = state.focusedField === 'project'
+    ? '.input-project'
+    : state.focusedField === 'comment'
+      ? '.input-comment'
+      : state.focusedField === 'start'
+        ? '.input-start'
+        : null;
+  if(fieldSelector){
+    row.querySelector(fieldSelector)?.focus();
+  }
 }
 
 // removed adjustEnd and closeOpenTasksNow (no end time in the model)
@@ -751,19 +807,7 @@ function ensureUniqueStart(entry, preferredDir = 1){
 // sort entries in place by start time descending (newest first, invalid/empty start goes first, keep relative order)
 function sortEntriesByStartInPlace(){
   const withIdx = state.data.entries.map((e, i)=>({e,i}));
-  withIdx.sort((a,b)=>{
-    const as = /^\d{1,2}:\d{2}$/.test(a.e.start||'');
-    const bs = /^\d{1,2}:\d{2}$/.test(b.e.start||'');
-    if(as && bs){
-      const da = hhmmToMinutes(a.e.start);
-      const db = hhmmToMinutes(b.e.start);
-      if(da !== db) return db - da;
-      return a.i - b.i; // stable for identical starts
-    }
-    if(as && !bs) return 1;
-    if(!as && bs) return -1;
-    return a.i - b.i;
-  });
+  withIdx.sort(compareEntriesByStart);
   state.data.entries = withIdx.map(x=>x.e);
 }
 
@@ -1465,9 +1509,18 @@ function renderQuickSelectButtons(){
 
 function handleQuickProjectSelect(ev){
   const project = ev.currentTarget.dataset.project;
+  const emptyEntry = state.data.entries.find(e => e.project.trim() === '');
   
-  // If a project field is focused, set its value directly
-  if (state.focusedField === 'project' && state.focusedId) {
+  // If every entry already has a project, create a new entry for this pill.
+  if (!emptyEntry) {
+    addEntry({ project });
+    const row = findRow(state.focusedId);
+    if(row){ $('.input-comment', row)?.focus(); }
+    return;
+  }
+
+  // Otherwise, if an entry is selected, fill that entry directly.
+  if (state.focusedId) {
     const entry = state.data.entries.find(e => e.id === state.focusedId);
     if (entry) {
       entry.project = project;
@@ -1478,41 +1531,27 @@ function handleQuickProjectSelect(ev){
       }
       persist();
       render();
-      setFocused(entry.id, 'project');
-      // Keep focus on the project field after setting the value
+      setFocused(entry.id, 'comment');
+      // Move focus to the comment field so the next action can continue on the same entry.
       const row = findRow(entry.id);
       if (row) {
-        const inputProject = $('.input-project', row);
-        inputProject?.focus();
-        // Trigger the change event to update suggestions and styling
-        inputProject?.dispatchEvent(new Event('change', { bubbles: true }));
+        const inputComment = $('.input-comment', row);
+        inputComment?.focus();
       }
       return;
     }
   }
   
-  // Fall back to original behavior: fill empty entry or create new one
-  // Check if there are any empty entries to fill first
-  const emptyEntry = state.data.entries.find(e => e.project.trim() === '');
-  if (emptyEntry) {
-    emptyEntry.project = project;
-    if (!emptyEntry.start) {
-      emptyEntry.start = nowHHMM();
-      ensureUniqueStart(emptyEntry);
-    }
-    persist();
-    render();
-    setFocused(emptyEntry.id);
-    // Focus comment field after filling entry via project button
-    const row = findRow(emptyEntry.id);
-    if(row){ $('.input-comment', row)?.focus(); }
-  } else {
-    // Only create a new entry if no empty entries exist
-    addEntry({ project: project });
-    // Focus comment field after adding entry via project button
-    const row = findRow(state.focusedId);
-    if(row){ $('.input-comment', row)?.focus(); }
+  emptyEntry.project = project;
+  if (!emptyEntry.start) {
+    emptyEntry.start = nowHHMM();
+    ensureUniqueStart(emptyEntry);
   }
+  persist();
+  render();
+  setFocused(emptyEntry.id, 'comment');
+  const row = findRow(emptyEntry.id);
+  if(row){ $('.input-comment', row)?.focus(); }
 }
 
 function renderCommentShortcutsButtons(){
