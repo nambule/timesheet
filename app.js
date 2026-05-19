@@ -4,8 +4,7 @@ const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
 const START_SORT_DEBOUNCE_MS = 400;
-const REORDER_PREMOVE_DELAY_MS = 1000;
-const REORDER_LANDING_MS = 700;
+const IMMEDIATE_SORT_TRIGGERS = ['btn-start-inc', 'btn-start-dec'];
 
 // -------- Data Model --------
 // Entry: { id, project, comment, minutes, start }
@@ -114,6 +113,16 @@ function nowHHMM(){
   return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
 }
 
+function roundMinutesToNearestQuarter(minutes){
+  const dayMinutes = 24 * 60;
+  const normalized = ((minutes % dayMinutes) + dayMinutes) % dayMinutes;
+  return Math.round(normalized / 15) * 15 % dayMinutes;
+}
+
+function nowRoundedHHMM(){
+  return minutesToHHMMDay(roundMinutesToNearestQuarter(hhmmToMinutes(nowHHMM())));
+}
+
 function computeDurationMinutes(start, end){
   const sOk = /^\d{1,2}:\d{2}$/.test(start||'');
   const eOk = /^\d{1,2}:\d{2}$/.test(end||'');
@@ -139,6 +148,16 @@ function visibleMinutes(e){
     .sort((a,b)=> a-b)[0];
   if(next === undefined) return 0;
   return next - currM;
+}
+
+function hasStartConflict(entry){
+  if(!entry || !/^\d{1,2}:\d{2}$/.test(entry.start || '')) return false;
+  const entryMinutes = hhmmToMinutes(entry.start);
+  return state.data.entries.some(other => (
+    other.id !== entry.id &&
+    /^\d{1,2}:\d{2}$/.test(other.start || '') &&
+    hhmmToMinutes(other.start) === entryMinutes
+  ));
 }
 
 // Simple, fast comment suggestions using only current day data
@@ -215,11 +234,7 @@ const state = {
   sortPendingFocusId: null,
   sortPendingControlSelector: null,
   // Enhanced reordering tracking
-  pendingMoveId: null,
-  pendingMoveDirection: null,
-  reorderDelayHandle: null,
-  reorderCleanupHandle: null,
-  reorderToken: 0,
+  isImmediateSort: false,
   movementDirection: null, // 'up' or 'down'
   lastSortedEntry: null, // Track last moved entry for animation
   showMovementIndicators: true,
@@ -249,18 +264,8 @@ function render(){
     const node = tmpl.content.firstElementChild.cloneNode(true);
     node.dataset.id = e.id;
     if(state.focusedId === e.id) node.classList.add('focused');
-    const isPendingMove = state.pendingMoveId === e.id;
-    const isJustSorted = state.lastSortedEntry === e.id;
-    const movementDirection = (isPendingMove ? state.pendingMoveDirection : state.movementDirection);
-    if((isPendingMove || isJustSorted) && movementDirection){
-      node.classList.add(movementDirection === 'up' ? 'moving-up' : 'moving-down');
-    }
-    if(isPendingMove){
-      node.classList.add('reorder-waiting');
-    }
-    if(isJustSorted){
-      node.classList.add('just-sorted', 'focused-after-sort');
-    }
+    const startConflict = hasStartConflict(e);
+    if(startConflict) node.classList.add('has-start-conflict');
     // Style "Pause" entries differently (case-insensitive match on project)
     const isPause = ((e.project||'').trim().toLowerCase() === 'pause');
     if(isPause) node.classList.add('pause');
@@ -277,16 +282,12 @@ function render(){
     inputProject.value = e.project || '';
     inputComment.value = e.comment || '';
     inputStart.value = e.start || '';
+    inputStart.setAttribute('aria-invalid', startConflict ? 'true' : 'false');
+    inputStart.title = startConflict ? 'Deux entrées ont la même heure de début. Modifiez-en une.' : '';
     const minsEl = $('.duration-min', node);
     if(minsEl) minsEl.textContent = minutesToHHMM(visibleMinutes(e));
 
     // no running visual (timer removed)
-    if((isPendingMove || isJustSorted) && state.showMovementIndicators){
-      const movementIndicator = document.createElement('div');
-      movementIndicator.className = 'movement-indicator';
-      movementIndicator.setAttribute('aria-hidden', 'true');
-      node.appendChild(movementIndicator);
-    }
 
     // Events
     // Project typing
@@ -294,7 +295,7 @@ function render(){
       e.project = inputProject.value;
       // If no start time yet, set it to now when user begins typing
       if(!e.start){
-        e.start = nowHHMM();
+        e.start = nowRoundedHHMM();
         ensureUniqueStart(e);
         const row = findRow(e.id);
         if(row){ $('.input-start', row).value = e.start; }
@@ -349,19 +350,23 @@ function render(){
     };
     inputStart.addEventListener('focus', ()=>{
       if(!e.start){
-        e.start = nowHHMM();
+        e.start = nowRoundedHHMM();
         ensureUniqueStart(e);
         delete state.rounding[e.id]; delete state.roundingStart[e.id];
         resortEntriesWithGhost(e.id);
+        openTimePickerForEntry(e.id);
+        return;
       }
       openTimePickerFor(inputStart);
     });
     inputStart.addEventListener('click', ()=>{
       if(!e.start){
-        e.start = nowHHMM();
+        e.start = nowRoundedHHMM();
         ensureUniqueStart(e);
         delete state.rounding[e.id]; delete state.roundingStart[e.id];
         resortEntriesWithGhost(e.id);
+        openTimePickerForEntry(e.id);
+        return;
       }
       openTimePickerFor(inputStart);
     });
@@ -402,7 +407,7 @@ function render(){
     inputComment.addEventListener('input', ()=>{
       e.comment = inputComment.value;
       if(!e.start){
-        e.start = nowHHMM();
+        e.start = nowRoundedHHMM();
         ensureUniqueStart(e);
         const row = findRow(e.id);
         if(row){ $('.input-start', row).value = e.start; }
@@ -485,7 +490,23 @@ function renderGhostPlaceholder(list){
 }
 
 function resortEntriesWithGhost(entryId){
-  performEnhancedSort(entryId);
+  const snapshot = entryId ? captureGhostPlaceholderSnapshot(entryId) : null;
+  sortEntriesByStartInPlace();
+  persist();
+  if(snapshot && entryId){
+    const newIndex = state.data.entries.findIndex(entry => entry.id === entryId);
+    if(newIndex !== -1 && newIndex !== snapshot.index){
+      state.ghostPlaceholder = snapshot;
+    }
+  }
+  render();
+  updateSummaryUI();
+}
+
+function openTimePickerForEntry(entryId){
+  const row = findRow(entryId);
+  const input = row ? $('.input-start', row) : null;
+  if(input) openTimePickerFor(input);
 }
 
 // No custom popover suggestions; rely on native datalist
@@ -500,7 +521,7 @@ function addEntry(prefill={}){
     minutes: prefill.minutes ?? 0,
     start: prefill.start !== undefined
       ? prefill.start
-      : (isToday ? nowHHMM() : ''),
+      : (isToday ? nowRoundedHHMM() : ''),
   };
   state.data.entries.push(entry);
   ensureUniqueStart(entry);
@@ -546,6 +567,8 @@ function scheduleDeferredSort(focusId, controlSelector, isImmediate = false){
   }
   
   if(isImmediate){
+    // Immediate sorting for quick adjustments
+    state.isImmediateSort = true;
     performEnhancedSort(focusId, controlSelector);
   } else {
     // Debounced sorting for manual typing
@@ -568,49 +591,64 @@ function cancelDeferredSort(){
   state.sortPending = false;
   state.sortPendingFocusId = null;
   state.sortPendingControlSelector = null;
-  cancelPendingReorder();
+  state.isImmediateSort = false;
 }
 
-function performEnhancedSort(focusId, controlSelector){
+function performEnhancedSort(focusId, controlSelector, movementDirection = null){
   const entryList = $('#entryList');
-  const movePlan = focusId ? planEntryMove(focusId) : null;
-  const placeholderSnapshot = movePlan?.willMove ? captureGhostPlaceholderSnapshot(focusId) : null;
-  const token = ++state.reorderToken;
-
-  cancelPendingReorder();
-
+  const placeholderSnapshot = focusId ? captureGhostPlaceholderSnapshot(focusId) : null;
+  
+  // Show visual feedback during sorting
   if(entryList){
     entryList.classList.add('sorting');
   }
-
-  if(!movePlan || !movePlan.willMove){
-    runSortedRender({
-      focusId,
-      controlSelector,
-      placeholderSnapshot: null,
-      movementDirection: null,
-      token,
-    });
-    return;
+  
+  // Track the entry being moved for animation
+  if(focusId && movementDirection){
+    state.movementDirection = movementDirection;
+    state.lastSortedEntry = focusId;
   }
-
-  state.pendingMoveId = focusId;
-  state.pendingMoveDirection = movePlan.direction;
+  
+  // Perform the actual sorting
+  sortEntriesByStartInPlace();
+  persist();
+  if(placeholderSnapshot && focusId){
+    const newIndex = state.data.entries.findIndex(entry => entry.id === focusId);
+    if(newIndex !== -1 && newIndex !== placeholderSnapshot.index){
+      state.ghostPlaceholder = placeholderSnapshot;
+    }
+  }
+  
+  // Render with animation
   render();
   updateSummaryUI();
-
-  state.reorderDelayHandle = setTimeout(()=>{
-    if(token !== state.reorderToken) return;
-    state.pendingMoveId = null;
-    state.pendingMoveDirection = null;
-    runSortedRender({
-      focusId,
-      controlSelector,
-      placeholderSnapshot,
-      movementDirection: movePlan.direction,
-      token,
-    });
-  }, REORDER_PREMOVE_DELAY_MS);
+  
+  // Clean up visual feedback
+  if(entryList){
+    setTimeout(() => {
+      entryList.classList.remove('sorting');
+    }, 300);
+  }
+  
+  // Enhanced focus management
+  if(focusId){
+    const row = findRow(focusId);
+    if(row){
+      // Add focus animation
+      row.classList.add('focused-after-sort');
+      
+      // Focus the appropriate control
+      if(controlSelector){
+        const btn = row.querySelector(controlSelector);
+        btn?.focus();
+      }
+      
+      // Remove animation class after animation completes
+      setTimeout(() => {
+        row.classList.remove('focused-after-sort');
+      }, 800);
+    }
+  }
 }
 
 function flushDeferredSort(){
@@ -624,7 +662,43 @@ function flushDeferredSort(){
   const controlSelector = state.sortPendingControlSelector;
   state.sortPendingFocusId = null;
   state.sortPendingControlSelector = null;
-  performEnhancedSort(focusId, controlSelector);
+  const placeholderSnapshot = focusId ? captureGhostPlaceholderSnapshot(focusId) : null;
+  
+  // Add visual feedback during reordering
+  const entryList = $('#entryList');
+  if(entryList){
+    entryList.classList.add('sorting');
+  }
+  
+  // Small delay to show the sorting state
+  setTimeout(() => {
+    sortEntriesByStartInPlace();
+    persist();
+    if(placeholderSnapshot && focusId){
+      const newIndex = state.data.entries.findIndex(entry => entry.id === focusId);
+      if(newIndex !== -1 && newIndex !== placeholderSnapshot.index){
+        state.ghostPlaceholder = placeholderSnapshot;
+      }
+    }
+    render();
+    updateSummaryUI();
+    
+    if(entryList){
+      entryList.classList.remove('sorting');
+    }
+    
+    if(focusId){
+      const row = findRow(focusId);
+      // Keep the same row highlighted/focused after resort
+      if(row){
+        row.classList.add('focused');
+        if(controlSelector){
+          const btn = row.querySelector(controlSelector);
+          btn?.focus();
+        }
+      }
+    }
+  }, 150);
 }
 
 function adjustMinutes(id, delta){
@@ -635,179 +709,43 @@ function adjustMinutes(id, delta){
 function adjustStart(id, delta){
   const e = state.data.entries.find(x=>x.id===id); if(!e) return;
   const dir = delta >= 0 ? 1 : -1;
-  const nowTs = Date.now();
-  const st = state.roundingStart[id] || { stage: 0, lastDir: dir, at: nowTs };
-  if(st.lastDir !== dir){ st.stage = 0; }
-
-  // Helpers for strict rounding forward/backward
-  const ceilUp = (m, step) => {
-    const rem = m % step; return m + (rem === 0 ? step : (step - rem));
-  };
-  const floorDown = (m, step) => {
-    const rem = m % step; return m - (rem === 0 ? step : rem);
-  };
-
   const day = 24*60;
-  let startMCurrent = e.start ? hhmmToMinutes(e.start) : hhmmToMinutes(nowHHMM());
-  let startMNew = startMCurrent;
-  if(st.stage === 0){
-    // First click: align start to 5-min grid and check if we've reached a quarter
-    startMNew = dir > 0 ? ceilUp(startMCurrent, 5) : floorDown(startMCurrent, 5);
-    // Check if we're at a quarter-hour mark (00, 15, 30, 45)
-    const minutesInHour = startMNew % 60;
-    if(minutesInHour % 15 === 0){
-      st.stage = 1; // Switch to 15-min increments
-    } else {
-      st.stage = 0; // Continue with 5-min increments
-    }
-  } else {
-    // Subsequent clicks: step by 15 minutes (quarter-hour increments)
-    startMNew = startMCurrent + dir*15;
-  }
-
+  let startMCurrent = e.start ? hhmmToMinutes(e.start) : hhmmToMinutes(nowRoundedHHMM());
+  let startMNew = startMCurrent + dir * 15;
   startMNew = ((startMNew % day) + day) % day;
   e.start = minutesToHHMMDay(startMNew);
   ensureUniqueStart(e, dir);
-
-  st.lastDir = dir; st.at = nowTs; state.roundingStart[id] = st;
+  delete state.roundingStart[id];
   persist();
   
-  performEnhancedSort(e.id, delta >= 0 ? '.btn-start-inc' : '.btn-start-dec');
-}
-
-function cancelPendingReorder(){
-  if(state.reorderDelayHandle){
-    clearTimeout(state.reorderDelayHandle);
-    state.reorderDelayHandle = null;
-  }
-  if(state.reorderCleanupHandle){
-    clearTimeout(state.reorderCleanupHandle);
-    state.reorderCleanupHandle = null;
-  }
-  state.pendingMoveId = null;
-  state.pendingMoveDirection = null;
-  state.lastSortedEntry = null;
-  state.movementDirection = null;
-  const entryList = $('#entryList');
-  if(entryList){
-    entryList.classList.remove('sorting');
-  }
-}
-
-function compareEntriesByStart(a, b){
-  const as = /^\d{1,2}:\d{2}$/.test(a.e.start || '');
-  const bs = /^\d{1,2}:\d{2}$/.test(b.e.start || '');
-  if(as && bs){
-    const da = hhmmToMinutes(a.e.start);
-    const db = hhmmToMinutes(b.e.start);
-    if(da !== db) return db - da;
-    return a.i - b.i;
-  }
-  if(as && !bs) return 1;
-  if(!as && bs) return -1;
-  return a.i - b.i;
-}
-
-function planEntryMove(entryId){
-  const currentIndex = state.data.entries.findIndex(entry => entry.id === entryId);
-  if(currentIndex === -1) return null;
-  const withIdx = state.data.entries.map((e, i)=> ({ e, i }));
-  withIdx.sort(compareEntriesByStart);
-  const newIndex = withIdx.findIndex(item => item.e.id === entryId);
-  if(newIndex === -1) return null;
-  return {
-    currentIndex,
-    newIndex,
-    willMove: newIndex !== currentIndex,
-    direction: newIndex < currentIndex ? 'up' : 'down',
-  };
-}
-
-function runSortedRender({ focusId, controlSelector, placeholderSnapshot, movementDirection, token }){
-  sortEntriesByStartInPlace();
-  persist();
-  if(placeholderSnapshot && focusId){
-    const newIndex = state.data.entries.findIndex(entry => entry.id === focusId);
-    if(newIndex !== -1 && newIndex !== placeholderSnapshot.index){
-      state.ghostPlaceholder = placeholderSnapshot;
-    }
-  }
-
-  state.lastSortedEntry = movementDirection ? focusId : null;
-  state.movementDirection = movementDirection;
-  render();
-  updateSummaryUI();
-  restoreSortedFocus(focusId, controlSelector);
-
-  state.reorderDelayHandle = null;
-  state.reorderCleanupHandle = setTimeout(()=>{
-    if(token !== state.reorderToken) return;
-    state.lastSortedEntry = null;
-    state.movementDirection = null;
-    const row = focusId ? findRow(focusId) : null;
-    row?.classList.remove('moving-up', 'moving-down', 'just-sorted', 'focused-after-sort');
-    const entryList = $('#entryList');
-    entryList?.classList.remove('sorting');
-    state.reorderCleanupHandle = null;
-  }, movementDirection ? REORDER_LANDING_MS : 0);
-}
-
-function restoreSortedFocus(focusId, controlSelector){
-  if(!focusId) return;
-  const row = findRow(focusId);
-  if(!row) return;
-  if(controlSelector){
-    const control = row.querySelector(controlSelector);
-    control?.focus();
-    return;
-  }
-
-  const fieldSelector = state.focusedField === 'project'
-    ? '.input-project'
-    : state.focusedField === 'comment'
-      ? '.input-comment'
-      : state.focusedField === 'start'
-        ? '.input-start'
-        : null;
-  if(fieldSelector){
-    row.querySelector(fieldSelector)?.focus();
-  }
+  // Determine movement direction for immediate visual feedback
+  const newIndex = state.data.entries.findIndex(entry => entry.id === e.id);
+  // For immediate feedback, we'll sort and render immediately for +/- button clicks
+  performEnhancedSort(e.id, delta >= 0 ? '.btn-start-inc' : '.btn-start-dec', dir > 0 ? 'down' : 'up');
 }
 
 // removed adjustEnd and closeOpenTasksNow (no end time in the model)
 
 function ensureUniqueStart(entry, preferredDir = 1){
-  if(!entry) return false;
-  const hasValidStart = /^\d{1,2}:\d{2}$/.test(entry.start || '');
-  if(!hasValidStart) return false;
-
-  const dir = preferredDir >= 0 ? 1 : -1;
-  const step = 15;
-  const day = 24 * 60;
-  let minutes = hhmmToMinutes(entry.start);
-  const maxIterations = Math.ceil(day / step);
-  let changed = false;
-
-  for(let i = 0; i < maxIterations; i++){
-    const conflict = state.data.entries.some(other => (
-      other.id !== entry.id &&
-      /^\d{1,2}:\d{2}$/.test(other.start || '') &&
-      hhmmToMinutes(other.start) === minutes
-    ));
-    if(!conflict) break;
-
-    minutes = (minutes + dir * step + day) % day;
-    entry.start = minutesToHHMMDay(minutes);
-    changed = true;
-  }
-
-  return changed;
+  return hasStartConflict(entry);
 }
 
 // sort entries in place by start time descending (newest first, invalid/empty start goes first, keep relative order)
 function sortEntriesByStartInPlace(){
   const withIdx = state.data.entries.map((e, i)=>({e,i}));
-  withIdx.sort(compareEntriesByStart);
+  withIdx.sort((a,b)=>{
+    const as = /^\d{1,2}:\d{2}$/.test(a.e.start||'');
+    const bs = /^\d{1,2}:\d{2}$/.test(b.e.start||'');
+    if(as && bs){
+      const da = hhmmToMinutes(a.e.start);
+      const db = hhmmToMinutes(b.e.start);
+      if(da !== db) return db - da;
+      return a.i - b.i; // stable for identical starts
+    }
+    if(as && !bs) return 1;
+    if(!as && bs) return -1;
+    return a.i - b.i;
+  });
   state.data.entries = withIdx.map(x=>x.e);
 }
 
@@ -1509,49 +1447,54 @@ function renderQuickSelectButtons(){
 
 function handleQuickProjectSelect(ev){
   const project = ev.currentTarget.dataset.project;
-  const emptyEntry = state.data.entries.find(e => e.project.trim() === '');
   
-  // If every entry already has a project, create a new entry for this pill.
-  if (!emptyEntry) {
-    addEntry({ project });
-    const row = findRow(state.focusedId);
-    if(row){ $('.input-comment', row)?.focus(); }
-    return;
-  }
-
-  // Otherwise, if an entry is selected, fill that entry directly.
-  if (state.focusedId) {
+  // If a project field is focused, set its value directly
+  if (state.focusedField === 'project' && state.focusedId) {
     const entry = state.data.entries.find(e => e.id === state.focusedId);
     if (entry) {
       entry.project = project;
       // If no start time yet, set it to now when user selects a project
       if (!entry.start) {
-        entry.start = nowHHMM();
+        entry.start = nowRoundedHHMM();
         ensureUniqueStart(entry);
       }
       persist();
       render();
-      setFocused(entry.id, 'comment');
-      // Move focus to the comment field so the next action can continue on the same entry.
+      setFocused(entry.id, 'project');
+      // Keep focus on the project field after setting the value
       const row = findRow(entry.id);
       if (row) {
-        const inputComment = $('.input-comment', row);
-        inputComment?.focus();
+        const inputProject = $('.input-project', row);
+        inputProject?.focus();
+        // Trigger the change event to update suggestions and styling
+        inputProject?.dispatchEvent(new Event('change', { bubbles: true }));
       }
       return;
     }
   }
   
-  emptyEntry.project = project;
-  if (!emptyEntry.start) {
-    emptyEntry.start = nowHHMM();
-    ensureUniqueStart(emptyEntry);
+  // Fall back to original behavior: fill empty entry or create new one
+  // Check if there are any empty entries to fill first
+  const emptyEntry = state.data.entries.find(e => e.project.trim() === '');
+  if (emptyEntry) {
+    emptyEntry.project = project;
+    if (!emptyEntry.start) {
+      emptyEntry.start = nowRoundedHHMM();
+      ensureUniqueStart(emptyEntry);
+    }
+    persist();
+    render();
+    setFocused(emptyEntry.id);
+    // Focus comment field after filling entry via project button
+    const row = findRow(emptyEntry.id);
+    if(row){ $('.input-comment', row)?.focus(); }
+  } else {
+    // Only create a new entry if no empty entries exist
+    addEntry({ project: project });
+    // Focus comment field after adding entry via project button
+    const row = findRow(state.focusedId);
+    if(row){ $('.input-comment', row)?.focus(); }
   }
-  persist();
-  render();
-  setFocused(emptyEntry.id, 'comment');
-  const row = findRow(emptyEntry.id);
-  if(row){ $('.input-comment', row)?.focus(); }
 }
 
 function renderCommentShortcutsButtons(){

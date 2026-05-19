@@ -77,7 +77,8 @@ input[type="date"]:focus, input[type="text"]:focus{outline:none;border-color:tra
   transition: all 0.3s ease-in-out;
 }
 .entry-list.sorting{
-  opacity: 0.96;
+  opacity: 0.9;
+  transform: scale(0.998);
 }
 .ghost-placeholder{
   border:2px dashed rgba(124,58,237,.35);
@@ -119,13 +120,9 @@ input[type="date"]:focus, input[type="text"]:focus{outline:none;border-color:tra
 .entry.moving-up,
 .entry.moving-down{
   z-index: 10;
-  transform: translateY(0) scale(1.01);
+  transform: scale(1.02);
   box-shadow: 0 20px 40px rgba(124,58,237,.25), 0 0 0 2px rgba(124,58,237,.3);
-  transition:
-    transform 0.72s cubic-bezier(.2,.7,.3,1),
-    box-shadow 0.72s cubic-bezier(.2,.7,.3,1),
-    border-color 0.72s cubic-bezier(.2,.7,.3,1),
-    background 0.72s cubic-bezier(.2,.7,.3,1);
+  transition: all 0.3s cubic-bezier(.2,.7,.3,1);
 }
 
 .entry.moving-up{
@@ -134,24 +131,6 @@ input[type="date"]:focus, input[type="text"]:focus{outline:none;border-color:tra
 
 .entry.moving-down{
   border-left: 4px solid #f59e0b; /* Amber for downward movement */
-}
-
-.entry.reorder-waiting{
-  transform: scale(1.015);
-  box-shadow: 0 24px 48px rgba(124,58,237,.22), 0 0 0 2px rgba(124,58,237,.22);
-  background: linear-gradient(135deg, rgba(124,58,237,.10), rgba(6,182,212,.08)), linear-gradient(180deg, #fff, #fbfbff);
-}
-
-.entry.reorder-waiting::before{
-  content:'Déplacement...';
-  position:absolute;
-  left:18px;
-  top:10px;
-  font-size:11px;
-  font-weight:700;
-  letter-spacing:.04em;
-  text-transform:uppercase;
-  color:rgba(124,58,237,.72);
 }
 
 /* Target position indicator */
@@ -185,13 +164,13 @@ input[type="date"]:focus, input[type="text"]:focus{outline:none;border-color:tra
 .entry.moving-up .movement-indicator{
   background: #10b981;
   opacity: 1;
-  animation: bounce-up 0.72s ease-out;
+  animation: bounce-up 0.6s ease-out;
 }
 
 .entry.moving-down .movement-indicator{
   background: #f59e0b;
   opacity: 1;
-  animation: bounce-down 0.72s ease-out;
+  animation: bounce-down 0.6s ease-out;
 }
 
 .movement-indicator::after{
@@ -216,23 +195,17 @@ input[type="date"]:focus, input[type="text"]:focus{outline:none;border-color:tra
 
 /* Brief highlight for the new position */
 .entry.just-sorted{
-  animation: position-flash 0.72s ease-out;
+  animation: position-flash 1.5s ease-out;
 }
 
 @keyframes position-flash{
-  0% {
-    box-shadow: 0 0 0 6px rgba(124,58,237,.3);
-    transform: translateY(8px) scale(0.995);
-  }
-  65% {
-    transform: translateY(0) scale(1.01);
-  }
+  0% { box-shadow: 0 0 0 6px rgba(124,58,237,.3); }
   100% { box-shadow: var(--shadow-soft); }
 }
 
 /* Focus persistence during sorting */
 .entry.focused-after-sort{
-  animation: focus-pulse 0.72s ease-out;
+  animation: focus-pulse 0.8s ease-out;
 }
 
 @keyframes focus-pulse{
@@ -357,6 +330,28 @@ input[type="date"]:focus, input[type="text"]:focus{outline:none;border-color:tra
   color:var(--text);
 }
 .input-start:focus{outline:none;background:rgba(124,58,237,.08)}
+.entry.has-start-conflict{
+  border-color: rgba(239,68,68,.45);
+  box-shadow: 0 0 0 3px rgba(239,68,68,.12), var(--shadow-soft);
+}
+.entry.has-start-conflict .time-controls{
+  border-color: rgba(239,68,68,.45);
+  background: rgba(239,68,68,.06);
+}
+.entry.has-start-conflict .input-start{
+  color: #b91c1c;
+}
+.entry.has-start-conflict .field.start::after{
+  content:'Heure en doublon';
+  margin-left:10px;
+  color:#b91c1c;
+  font-size:12px;
+  font-weight:700;
+  letter-spacing:.02em;
+}
+.entry.has-start-conflict .input-start:focus{
+  background: rgba(239,68,68,.10);
+}
 .btn-start-inc,.btn-start-dec{
   width:24px;
   height:24px;
