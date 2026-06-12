@@ -160,6 +160,16 @@ function hasStartConflict(entry){
   ));
 }
 
+function isLastStartConflict(entry){
+  if(!hasStartConflict(entry)) return false;
+  const entryMinutes = hhmmToMinutes(entry.start);
+  const duplicates = state.data.entries.filter(other => (
+    /^\d{1,2}:\d{2}$/.test(other.start || '') &&
+    hhmmToMinutes(other.start) === entryMinutes
+  ));
+  return duplicates[duplicates.length - 1]?.id === entry.id;
+}
+
 // Simple, fast comment suggestions using only current day data
 function getFrequentComments(limitDays = 30, maxItems = 20, forProject = null){
   const freq = new Map();
@@ -266,6 +276,7 @@ function render(){
     if(state.focusedId === e.id) node.classList.add('focused');
     const startConflict = hasStartConflict(e);
     if(startConflict) node.classList.add('has-start-conflict');
+    if(isLastStartConflict(e)) node.classList.add('has-start-conflict-label');
     // Style "Pause" entries differently (case-insensitive match on project)
     const isPause = ((e.project||'').trim().toLowerCase() === 'pause');
     if(isPause) node.classList.add('pause');
@@ -1447,30 +1458,30 @@ function renderQuickSelectButtons(){
 
 function handleQuickProjectSelect(ev){
   const project = ev.currentTarget.dataset.project;
+  const focusedEntry = state.focusedId
+    ? state.data.entries.find(e => e.id === state.focusedId)
+    : null;
   
-  // If a project field is focused, set its value directly
-  if (state.focusedField === 'project' && state.focusedId) {
-    const entry = state.data.entries.find(e => e.id === state.focusedId);
-    if (entry) {
-      entry.project = project;
-      // If no start time yet, set it to now when user selects a project
-      if (!entry.start) {
-        entry.start = nowRoundedHHMM();
-        ensureUniqueStart(entry);
-      }
-      persist();
-      render();
-      setFocused(entry.id, 'project');
-      // Keep focus on the project field after setting the value
-      const row = findRow(entry.id);
-      if (row) {
-        const inputProject = $('.input-project', row);
-        inputProject?.focus();
-        // Trigger the change event to update suggestions and styling
-        inputProject?.dispatchEvent(new Event('change', { bubbles: true }));
-      }
-      return;
+  // Prefer the current row when assigning a project to an empty project field.
+  if (focusedEntry && (state.focusedField === 'project' || !(focusedEntry.project || '').trim())) {
+    focusedEntry.project = project;
+    // If no start time yet, set it to now when user selects a project
+    if (!focusedEntry.start) {
+      focusedEntry.start = nowRoundedHHMM();
+      ensureUniqueStart(focusedEntry);
     }
+    persist();
+    render();
+    setFocused(focusedEntry.id, 'project');
+    // Keep focus on the project field after setting the value
+    const row = findRow(focusedEntry.id);
+    if (row) {
+      const inputProject = $('.input-project', row);
+      inputProject?.focus();
+      // Trigger the change event to update suggestions and styling
+      inputProject?.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    return;
   }
   
   // Fall back to original behavior: fill empty entry or create new one

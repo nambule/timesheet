@@ -341,7 +341,7 @@ input[type="date"]:focus, input[type="text"]:focus{outline:none;border-color:tra
 .entry.has-start-conflict .input-start{
   color: #b91c1c;
 }
-.entry.has-start-conflict .field.start::after{
+.entry.has-start-conflict-label .field.start::after{
   content:'Heure en doublon';
   margin-left:10px;
   color:#b91c1c;
