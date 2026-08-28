@@ -18,9 +18,15 @@
       <div class="title">Timesheet</div>
     </div>
     <div class="toolbar">
-      <button id="btnPrevDay" class="secondary" title="Jour précédent (h / Ctrl+←)">←</button>
-      <input id="datePicker" type="date" aria-label="Date" />
-      <button id="btnNextDay" class="secondary" title="Jour suivant (l / Ctrl+→)">→</button>
+      <div class="day-navigation">
+        <button id="btnPrevDay" class="secondary" title="Jour précédent (h / Ctrl+←)">←</button>
+        <input id="datePicker" type="date" aria-label="Date" />
+        <button id="btnNextDay" class="secondary" title="Jour suivant (l / Ctrl+→)">→</button>
+        <button id="btnToday" class="day-status" type="button" aria-live="polite">
+          <span class="day-status-dot" aria-hidden="true"></span>
+          <span id="dayStatusLabel">Aujourd’hui</span>
+        </button>
+      </div>
       <button id="btnSettings" class="secondary" title="Gérer les projets">Réglages</button>
       <button id="btnSummary" class="secondary" title="Voir récapitulatif">Récap</button>
       <button id="btnExport" class="secondary" title="Copier vers Excel">Copier vers Excel</button>

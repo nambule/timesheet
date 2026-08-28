@@ -253,7 +253,25 @@ const state = {
 };
 
 // -------- Rendering --------
+function updateDateContext(){
+  const isToday = state.date === todayISO();
+  const header = $('.app-header');
+  const status = $('#btnToday');
+  const label = $('#dayStatusLabel');
+  const datePicker = $('#datePicker');
+  if(!header || !status || !label || !datePicker) return;
+
+  header.classList.toggle('is-other-day', !isToday);
+  status.classList.toggle('is-today', isToday);
+  status.classList.toggle('is-other-day', !isToday);
+  status.disabled = isToday;
+  label.textContent = isToday ? 'Aujourd’hui' : 'Pas aujourd’hui · Revenir';
+  status.title = isToday ? 'Vous saisissez la journée en cours' : 'Revenir à aujourd’hui';
+  datePicker.title = isToday ? 'Journée en cours' : 'Attention : cette date n’est pas aujourd’hui';
+}
+
 function render(){
+  updateDateContext();
   const list = $('#entryList');
   list.innerHTML = '';
 
@@ -1141,6 +1159,11 @@ function init(){
 
   $('#btnPrevDay').addEventListener('click', ()=> shiftDay(-1));
   $('#btnNextDay').addEventListener('click', ()=> shiftDay(+1));
+  $('#btnToday').addEventListener('click', ()=>{
+    if(state.date === todayISO()) return;
+    datePicker.value = todayISO();
+    datePicker.dispatchEvent(new Event('change', { bubbles: true }));
+  });
 
   $('#btnAdd')?.addEventListener('click', ()=> addEntry());
   $('#btnAddBreak')?.addEventListener('click', ()=> addPause());
@@ -1231,7 +1254,8 @@ function init(){
   // Build time picker once
   buildTimePicker();
 
-  // No live timers; no periodic tick needed
+  // Keep the day warning accurate when the app stays open across midnight.
+  state.tickHandle = window.setInterval(updateDateContext, 60_000);
 }
 
 window.addEventListener('DOMContentLoaded', init);
