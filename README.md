@@ -1,39 +1,71 @@
-# Timesheet Codex
+# Timesheet
 
-Application de saisie de temps simple (desktop et mobile), 100% locale (sans serveur), qui enregistre vos entrées du jour dans le stockage local du navigateur.
+Timesheet est une application web légère pour saisir son temps de travail au fil de la journée et analyser sa répartition par projet. Elle fonctionne directement dans le navigateur, sans compte ni serveur, et conserve toutes les données localement.
 
-## Lancer
+## Ce que permet l’application
 
-- Ouvrez `index.html` dans votre navigateur (double‑clic ou glisser‑déposer).
-- Sur mobile, servez le dossier avec un serveur statique (ex: `python3 -m http.server`) et ouvrez l’URL depuis votre téléphone sur le même réseau.
+### Saisir sa journée
 
-## Fonctionnalités
+- Ajouter rapidement une activité, un projet et un commentaire.
+- Calculer automatiquement la durée d’une activité jusqu’au début de la suivante.
+- Ajouter des pauses, exclues des statistiques et des exports de temps travaillé.
+- Naviguer entre les journées tout en voyant clairement si la date affichée est aujourd’hui.
+- Réutiliser les projets et commentaires fréquents grâce aux raccourcis et à l’auto-complétion.
+- Regrouper les projets et personnaliser la couleur de chaque groupe depuis les réglages.
 
-- Entrées par projet, avec commentaire et durée.
-- Liste des projets gérée via un écran « Réglages » (ajout, renommage, suppression), stockée localement.
-- Heure de début par entrée; la durée est calculée automatiquement entre le début de la tâche et le début de la tâche suivante.
-- Saisie rapide au clavier (une main) ou à la souris/tactile.
-- Auto‑complétion sur Projets et Commentaires (basée sur l’historique/meta).
-- Récapitulatif du jour (totaux par Projet) et export CSV.
+### Analyser son temps
+
+- Consulter la répartition du temps par groupe de projets puis par projet dans une vue dédiée.
+- Analyser par défaut la semaine courante, du lundi au dimanche.
+- Parcourir rapidement les semaines et les mois précédents ou suivants.
+- Définir librement une autre période.
+- Comparer les projets avec leurs durées, pourcentages et barres de répartition, colorées selon leur groupe.
+
+### Exporter les données
+
+- Copier les entrées de la journée dans un format prêt à coller dans Excel.
+- Exporter l’année complète au format CSV.
+- Copier les commentaires associés à un projet sur la période analysée.
+
+## Démarrage rapide
+
+Aucune installation ni compilation n’est nécessaire.
+
+1. Téléchargez ou clonez le dépôt.
+2. Ouvrez `index.html` dans un navigateur moderne.
+3. Ajoutez une première activité et indiquez son heure de début.
+4. Ajoutez l’activité suivante : la durée de la précédente est calculée automatiquement.
+
+Pour tester l’application sur un autre appareil du réseau, lancez un serveur statique depuis le dossier du projet :
+
+```bash
+python3 -m http.server 8000
+```
+
+Ouvrez ensuite `http://<adresse-ip>:8000/index.html` sur l’appareil.
 
 ## Raccourcis clavier
 
-- `a` : ajouter une ligne
-- `j` / `k` ou flèches bas/haut : naviguer entre les lignes
-- `h` / `l` ou `Ctrl+←` / `Ctrl+→` : jour précédent/suivant
-- `p` : focus sur le champ Projet
-- `c` : focus sur le champ Commentaire
-- `+` / `-` : décaler l'heure de début de ±15 minutes
-- Boutons ± à côté de Début pour ajuster par pas de 15 minutes
-
-Astuce: tapez directement dans un champ, les suggestions de commentaire apparaissent et sont cliquables.
+| Raccourci | Action |
+| --- | --- |
+| `a` | Ajouter une entrée |
+| `j` / `k` ou `↓` / `↑` | Naviguer entre les entrées |
+| `h` / `l` ou `Ctrl+←` / `Ctrl+→` | Changer de journée |
+| `p` | Sélectionner le champ Projet |
+| `c` | Sélectionner le champ Commentaire |
+| `+` / `-` | Décaler l’heure de début de 15 minutes |
 
 ## Données et confidentialité
 
-- Les données du jour sont stockées localement dans `localStorage` par jour, clé `ts:YYYY-MM-DD`.
-- La liste des Projets est stockée dans `ts:meta` (globale).
-- Rien n’est envoyé vers un serveur.
+- Les temps saisis sont stockés uniquement dans le navigateur.
+- Chaque journée est enregistrée dans `localStorage` sous la clé `ts:YYYY-MM-DD`.
+- Les projets, groupes, couleurs et raccourcis globaux sont enregistrés sous la clé `ts:meta`.
+- Aucun compte, backend applicatif ou suivi analytique n’est utilisé.
 
-## Export
+Effacer les données du site depuis les outils de développement du navigateur supprime définitivement les temps enregistrés sur cet appareil.
 
-- Bouton « Export CSV » pour obtenir les lignes du jour (colonnes: Date, Projet, Début, Commentaire, Minutes, HH:MM) et les totaux par Projet.
+## Structure du projet
+
+- `index.html` : structure de l’interface.
+- `styles.css` : identité visuelle et mise en page responsive.
+- `app.js` : saisie, calculs, stockage local, statistiques et exports.

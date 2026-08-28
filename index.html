@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Timesheet Codex</title>
+  <title>Timesheet</title>
   <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="styles.css" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -17,28 +17,39 @@
       <img class="logo" src="assets/favicon.svg" alt="" aria-hidden="true" />
       <div class="title">Timesheet</div>
     </div>
-    <div class="toolbar">
-      <div class="day-navigation">
-        <button id="btnPrevDay" class="secondary" title="Jour précédent (h / Ctrl+←)">←</button>
-        <input id="datePicker" type="date" aria-label="Date" />
-        <button id="btnNextDay" class="secondary" title="Jour suivant (l / Ctrl+→)">→</button>
-        <button id="btnToday" class="day-status" type="button" aria-live="polite">
-          <span class="day-status-dot" aria-hidden="true"></span>
-          <span id="dayStatusLabel">Aujourd’hui</span>
-        </button>
-      </div>
-      <button id="btnSettings" class="secondary" title="Gérer les projets">Réglages</button>
-      <button id="btnSummary" class="secondary" title="Voir récapitulatif">Récap</button>
-      <button id="btnExport" class="secondary" title="Copier vers Excel">Copier vers Excel</button>
-      <button id="btnExportFullYear" class="secondary" title="Exporter CSV année complète">Export CSV Année</button>
-    </div>
+    <nav id="viewSwitcher" class="view-switcher" role="tablist" aria-label="Vue principale">
+      <button id="tabEntryView" class="view-tab" type="button" role="tab" aria-controls="entryView" aria-selected="true">Saisie</button>
+      <button id="tabStatsView" class="view-tab" type="button" role="tab" aria-controls="summarySection" aria-selected="false">Statistiques</button>
+    </nav>
   </header>
 
   <main class="content">
-    <section class="entries">
+    <section class="entries" id="entryView" role="tabpanel" aria-labelledby="tabEntryView">
+      <div class="entry-toolbar">
+        <div class="day-navigation">
+          <button id="btnPrevDay" class="secondary" title="Jour précédent (h / Ctrl+←)">←</button>
+          <input id="datePicker" type="date" aria-label="Date" />
+          <button id="btnNextDay" class="secondary" title="Jour suivant (l / Ctrl+→)">→</button>
+          <button id="btnToday" class="day-status" type="button" aria-live="polite">
+            <span class="day-status-dot" aria-hidden="true"></span>
+            <span id="dayStatusLabel">Aujourd’hui</span>
+          </button>
+        </div>
+        <div class="entry-actions">
+          <button id="btnSettings" class="secondary" title="Gérer les projets">Réglages</button>
+          <button id="btnExport" class="secondary" title="Copier vers Excel">Copier vers Excel</button>
+          <button id="btnExportFullYear" class="secondary" title="Exporter CSV année complète">Export CSV Année</button>
+        </div>
+      </div>
       <div class="quick-select">
-        <div id="quickProjectButtons" class="quick-project-buttons"></div>
-        <div id="quickCommentButtons" class="quick-comment-buttons"></div>
+        <div class="shortcut-group shortcut-projects">
+          <div class="shortcut-label">Projets fréquents</div>
+          <div id="quickProjectButtons" class="quick-project-buttons"></div>
+        </div>
+        <div class="shortcut-group shortcut-comments">
+          <div class="shortcut-label">Commentaires fréquents</div>
+          <div id="quickCommentButtons" class="quick-comment-buttons"></div>
+        </div>
       </div>
       <div class="btn-row">
         <button id="btnAdd" class="primary btn-add-large" title="Ajouter une entrée (a)">+ Ajouter une entrée</button>
@@ -55,12 +66,70 @@
       <div id="entryList" class="entry-list" role="list" aria-label="Entrées de temps du jour"></div>
     </section>
 
-    <section class="summary" id="summarySection" hidden>
-      <h2>Récapitulatif du jour</h2>
-      <div id="summaryList" class="summary-list"></div>
+    <section class="summary" id="summarySection" role="tabpanel" aria-labelledby="tabStatsView" hidden>
+      <div class="summary-heading">
+        <div>
+          <div class="summary-eyebrow">Analyse</div>
+          <h2>Répartition des temps</h2>
+        </div>
+      </div>
+      <div class="summary-period-toolbar">
+        <div class="summary-period-modes" role="group" aria-label="Type de période">
+          <button id="btnPeriodWeek" class="period-mode" type="button" aria-pressed="true">Semaine</button>
+          <button id="btnPeriodMonth" class="period-mode" type="button" aria-pressed="false">Mois</button>
+        </div>
+        <div class="summary-period-navigation">
+          <button id="btnPreviousPeriod" class="secondary period-step" type="button" title="Période précédente" aria-label="Période précédente">←</button>
+          <strong id="summaryPeriodLabel" aria-live="polite">Semaine en cours</strong>
+          <button id="btnNextPeriod" class="secondary period-step" type="button" title="Période suivante" aria-label="Période suivante">→</button>
+        </div>
+      </div>
+      <details id="summaryCustomPeriod" class="summary-custom-period">
+        <summary>Choisir des dates personnalisées</summary>
+        <form id="summaryRangeForm" class="summary-range">
+          <label>
+            <span>Du</span>
+            <input id="summaryStartDate" type="date" required />
+          </label>
+          <label>
+            <span>Au</span>
+            <input id="summaryEndDate" type="date" required />
+          </label>
+          <button class="primary" type="submit">Afficher</button>
+        </form>
+      </details>
+      <p id="summaryRangeError" class="summary-error" role="alert" hidden></p>
+      <div class="summary-overview" aria-live="polite">
+        <div class="summary-stat">
+          <span>Temps total</span>
+          <strong id="summaryTotal">00:00</strong>
+        </div>
+        <div class="summary-stat">
+          <span>Projets</span>
+          <strong id="summaryProjectCount">0</strong>
+        </div>
+        <div class="summary-stat">
+          <span>Jours renseignés</span>
+          <strong id="summaryDayCount">0</strong>
+        </div>
+      </div>
+      <section class="summary-breakdown summary-groups-breakdown" aria-labelledby="summaryGroupsTitle">
+        <div class="summary-section-heading">
+          <h3 id="summaryGroupsTitle">Par groupe de projets</h3>
+          <span>Vue d’ensemble</span>
+        </div>
+        <div id="summaryGroupList" class="summary-group-list" role="list"></div>
+      </section>
+      <section class="summary-breakdown" aria-labelledby="summaryProjectsTitle">
+        <div class="summary-section-heading">
+          <h3 id="summaryProjectsTitle">Par projet</h3>
+          <span>Détail</span>
+        </div>
+        <div id="summaryList" class="summary-list" role="list"></div>
+      </section>
+      <div id="summaryEmpty" class="summary-empty" hidden>Aucun temps calculable sur cette période.</div>
       <div class="summary-footer">
-        <div id="summaryTotal" class="summary-total"></div>
-        <button id="btnCloseSummary" class="secondary">Fermer</button>
+        <div id="summaryRangeLabel" class="summary-range-label"></div>
       </div>
     </section>
   </main>
@@ -110,7 +179,17 @@
       </div>
       <section class="settings" id="settingsSection">
         <div class="settings-section">
+          <h3>Groupes de projets</h3>
+          <p class="settings-help">Une même couleur identifie les projets d’un groupe dans la saisie et les statistiques.</p>
+          <div class="settings-add settings-add-group">
+            <input type="text" id="newProjectGroupInput" placeholder="Nouveau groupe" aria-label="Nouveau groupe de projets" />
+            <button id="btnAddProjectGroup" class="primary">Ajouter</button>
+          </div>
+          <div id="projectGroupsSettingsList" class="settings-list" aria-label="Liste des groupes de projets"></div>
+        </div>
+        <div class="settings-section">
           <h3>Projets</h3>
+          <p class="settings-help">Affectez chaque projet au groupe qui lui correspond.</p>
           <div class="settings-add">
             <input type="text" id="newProjectInput" placeholder="Nouveau projet" aria-label="Nouveau projet" />
             <button id="btnAddProject" class="primary">Ajouter</button>

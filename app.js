@@ -1,20 +1,100 @@
-// Timesheet Codex - simple offline SPA using localStorage
+// Timesheet - simple offline SPA using localStorage
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
 const START_SORT_DEBOUNCE_MS = 400;
 const IMMEDIATE_SORT_TRIGGERS = ['btn-start-inc', 'btn-start-dec'];
+const GROUP_COLOR_PALETTE = ['#6d4aff', '#0f8fa3', '#d97706', '#2563eb', '#be185d', '#4f46e5', '#0f766e'];
+const DEFAULT_PROJECT_GROUPS = [
+  { id: 'pm-cpo', name: 'PM + CPO', color: '#6d4aff' },
+  { id: 'adm', name: 'ADM', color: '#0f8fa3' },
+  { id: 'other', name: 'Autres', color: '#d97706' },
+];
+
+function defaultGroupIdForProject(project){
+  if(['PM', 'CPO'].includes(project)) return 'pm-cpo';
+  if(project === 'ADM') return 'adm';
+  return 'other';
+}
+
+function normalizeProjectGroups(meta){
+  const storedGroups = Array.isArray(meta.projectGroups) && meta.projectGroups.length
+    ? meta.projectGroups
+        .filter(group => group && group.id && group.name)
+        .map((group, index) => ({
+          id: String(group.id),
+          name: String(group.name),
+          color: /^#[0-9a-f]{6}$/i.test(group.color || '')
+            ? group.color
+            : GROUP_COLOR_PALETTE[index % GROUP_COLOR_PALETTE.length],
+        }))
+    : [];
+  const groups = storedGroups.length
+    ? storedGroups
+    : DEFAULT_PROJECT_GROUPS.map(group => ({ ...group }));
+  const validIds = new Set(groups.map(group => group.id));
+  const fallbackId = validIds.has('other') ? 'other' : groups[0].id;
+  const assignments = {};
+  for(const project of meta.projects || []){
+    const assignedId = meta.projectGroupAssignments?.[project];
+    assignments[project] = validIds.has(assignedId)
+      ? assignedId
+      : (validIds.has(defaultGroupIdForProject(project)) ? defaultGroupIdForProject(project) : fallbackId);
+  }
+  return { groups, assignments };
+}
+
+function projectGroup(project){
+  const groups = state.meta.projectGroups || [];
+  const assignedId = state.meta.projectGroupAssignments?.[project];
+  return groups.find(group => group.id === assignedId)
+    || groups.find(group => group.id === 'other')
+    || groups[0]
+    || { id: 'ungrouped', name: 'Sans groupe', color: GROUP_COLOR_PALETTE[0] };
+}
+
+function projectColor(project){
+  return projectGroup(project).color;
+}
 
 // -------- Data Model --------
 // Entry: { id, project, comment, minutes, start }
 // Day data key: ts:YYYY-MM-DD
-// Meta key (global): ts:meta -> { projects: string[], commentShortcuts: string[] }
+// Meta key (global): ts:meta -> projects, shortcuts, groups and project assignments
 
 function todayISO() {
-  const d = new Date();
+  return dateToISO(new Date());
+}
+
+function dateToISO(d){
   const pad = (n) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+}
+
+function isoToLocalDate(dateStr){
+  const [year, month, day] = dateStr.split('-').map(Number);
+  return new Date(year, month - 1, day);
+}
+
+function weekRangeISO(anchorDate = todayISO()){
+  const anchor = isoToLocalDate(anchorDate);
+  const monday = new Date(anchor.getFullYear(), anchor.getMonth(), anchor.getDate());
+  const daysSinceMonday = (monday.getDay() + 6) % 7;
+  monday.setDate(monday.getDate() - daysSinceMonday);
+  const sunday = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 6);
+  return { start: dateToISO(monday), end: dateToISO(sunday) };
+}
+
+function monthRangeISO(anchorDate = todayISO()){
+  const anchor = isoToLocalDate(anchorDate);
+  const firstDay = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
+  const lastDay = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0);
+  return { start: dateToISO(firstDay), end: dateToISO(lastDay) };
+}
+
+function currentWeekRangeISO(){
+  return weekRangeISO(todayISO());
 }
 
 function storageKey(dateStr){
@@ -42,7 +122,14 @@ function saveDay(dateStr, data){
 function loadMeta(){
   try{
     const raw = localStorage.getItem('ts:meta');
-    if(!raw) return { projects: [], commentShortcuts: [] };
+    if(!raw){
+      return {
+        projects: [],
+        commentShortcuts: [],
+        projectGroups: DEFAULT_PROJECT_GROUPS.map(group => ({ ...group })),
+        projectGroupAssignments: {},
+      };
+    }
     const meta = JSON.parse(raw);
     // Migration from legacy structure { clients, projectsByClient }
     if(!meta.projects){
@@ -53,16 +140,29 @@ function loadMeta(){
     }
     meta.projects = meta.projects || [];
     meta.commentShortcuts = meta.commentShortcuts || [];
-    return { projects: meta.projects, commentShortcuts: meta.commentShortcuts };
+    const normalizedGroups = normalizeProjectGroups(meta);
+    return {
+      projects: meta.projects,
+      commentShortcuts: meta.commentShortcuts,
+      projectGroups: normalizedGroups.groups,
+      projectGroupAssignments: normalizedGroups.assignments,
+    };
   }catch(e){
     console.error('Load meta error', e);
-    return { projects: [], commentShortcuts: [] };
+    return {
+      projects: [],
+      commentShortcuts: [],
+      projectGroups: DEFAULT_PROJECT_GROUPS.map(group => ({ ...group })),
+      projectGroupAssignments: {},
+    };
   }
 }
 function saveMeta(meta){
   localStorage.setItem('ts:meta', JSON.stringify({
     projects: meta.projects||[],
-    commentShortcuts: meta.commentShortcuts||[]
+    commentShortcuts: meta.commentShortcuts||[],
+    projectGroups: meta.projectGroups||[],
+    projectGroupAssignments: meta.projectGroupAssignments||{}
   }));
 }
 function ensureProject(project){
@@ -70,6 +170,8 @@ function ensureProject(project){
   if(!state.meta.projects.includes(p)){
     state.meta.projects.push(p);
     state.meta.projects.sort((a,b)=> a.localeCompare(b));
+    const group = state.meta.projectGroups.find(item => item.id === 'other') || state.meta.projectGroups[0];
+    if(group) state.meta.projectGroupAssignments[p] = group.id;
     saveMeta(state.meta);
   }
 }
@@ -133,7 +235,7 @@ function computeDurationMinutes(start, end){
   return (24*60 - s) + e; // overnight wrap
 }
 
-function visibleMinutes(e){
+function visibleMinutesForDay(entries, e){
   // New rule: duration = from this start to the following task start (by time)
   const startOk = /^\d{1,2}:\d{2}$/.test(e.start||'');
   if(!startOk){
@@ -141,13 +243,17 @@ function visibleMinutes(e){
     return (e.minutes||0);
   }
   const currM = hhmmToMinutes(e.start);
-  const next = (state.data.entries||[])
+  const next = (entries||[])
     .filter(x => x.id !== e.id && /^\d{1,2}:\d{2}$/.test(x.start||''))
     .map(x => hhmmToMinutes(x.start))
     .filter(m => m > currM)
     .sort((a,b)=> a-b)[0];
   if(next === undefined) return 0;
   return next - currM;
+}
+
+function visibleMinutes(e){
+  return visibleMinutesForDay(state.data.entries, e);
 }
 
 function hasStartConflict(entry){
@@ -230,8 +336,10 @@ function updateCommentSuggestions(entryId) {
 // -------- UI State --------
 const state = {
   date: todayISO(),
+  activeView: window.location.hash === '#statistiques' ? 'stats' : 'entry',
+  summaryPeriodMode: 'week',
   data: { entries: [], projects: [] },
-  meta: { projects: [], commentShortcuts: [] },
+  meta: { projects: [], commentShortcuts: [], projectGroups: [], projectGroupAssignments: {} },
   tickHandle: null,
   focusedId: null,
   focusedField: null, // Track which field is focused: 'project', 'comment', 'start', or null
@@ -255,19 +363,54 @@ const state = {
 // -------- Rendering --------
 function updateDateContext(){
   const isToday = state.date === todayISO();
-  const header = $('.app-header');
+  const entryToolbar = $('.entry-toolbar');
   const status = $('#btnToday');
   const label = $('#dayStatusLabel');
   const datePicker = $('#datePicker');
-  if(!header || !status || !label || !datePicker) return;
+  if(!entryToolbar || !status || !label || !datePicker) return;
 
-  header.classList.toggle('is-other-day', !isToday);
+  entryToolbar.classList.toggle('is-other-day', !isToday);
   status.classList.toggle('is-today', isToday);
   status.classList.toggle('is-other-day', !isToday);
   status.disabled = isToday;
   label.textContent = isToday ? 'Aujourd’hui' : 'Pas aujourd’hui · Revenir';
   status.title = isToday ? 'Vous saisissez la journée en cours' : 'Revenir à aujourd’hui';
   datePicker.title = isToday ? 'Journée en cours' : 'Attention : cette date n’est pas aujourd’hui';
+}
+
+function viewFromLocation(){
+  return window.location.hash === '#statistiques' ? 'stats' : 'entry';
+}
+
+function setActiveView(view){
+  const activeView = view === 'stats' ? 'stats' : 'entry';
+  state.activeView = activeView;
+  const isStats = activeView === 'stats';
+  const entryView = $('#entryView');
+  const statsView = $('#summarySection');
+  const entryTab = $('#tabEntryView');
+  const statsTab = $('#tabStatsView');
+  if(!entryView || !statsView || !entryTab || !statsTab) return;
+
+  entryView.hidden = isStats;
+  statsView.hidden = !isStats;
+  document.body.classList.toggle('is-stats-view', isStats);
+  entryTab.setAttribute('aria-selected', String(!isStats));
+  statsTab.setAttribute('aria-selected', String(isStats));
+  entryTab.tabIndex = isStats ? -1 : 0;
+  statsTab.tabIndex = isStats ? 0 : -1;
+  if(isStats) updateSummaryUI();
+  updateDateContext();
+}
+
+function navigateToView(view){
+  const hash = view === 'stats' ? '#statistiques' : '#saisie';
+  if(window.location.hash === hash){
+    setActiveView(view);
+  } else {
+    window.location.hash = hash;
+  }
+  window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 function render(){
@@ -793,49 +936,279 @@ function persist(){
 }
 
 // -------- Summary --------
-function groupByProject(){
+function groupEntriesByProject(entries){
   const acc = new Map();
-  for(const e of state.data.entries){
+  for(const e of entries){
     // Skip pause activities in the recap
     const isPause = ((e.project||'').trim().toLowerCase() === 'pause');
     if(isPause) continue;
 
     const project = (e.project||'Sans projet').trim() || 'Sans projet';
-    const key = project;
-    acc.set(key, (acc.get(key)||0) + visibleMinutes(e));
+    acc.set(project, (acc.get(project)||0) + visibleMinutesForDay(entries, e));
   }
   return Array.from(acc.entries()).sort((a,b)=> a[0].localeCompare(b[0]));
+}
+
+function groupByProject(){
+  return groupEntriesByProject(state.data.entries);
+}
+
+function storedDaysInRange(startDate, endDate){
+  const dates = new Set();
+  for(let i = 0; i < localStorage.length; i++){
+    const key = localStorage.key(i) || '';
+    const match = key.match(/^ts:(\d{4}-\d{2}-\d{2})$/);
+    if(match && match[1] >= startDate && match[1] <= endDate){
+      dates.add(match[1]);
+    }
+  }
+  if(state.date >= startDate && state.date <= endDate){
+    dates.add(state.date);
+  }
+  return Array.from(dates).sort().map(date => ({
+    date,
+    data: date === state.date ? state.data : loadDay(date),
+  }));
+}
+
+function summarizePeriod(startDate, endDate){
+  const totals = new Map();
+  let dayCount = 0;
+
+  for(const day of storedDaysInRange(startDate, endDate)){
+    const entries = day.data.entries || [];
+    const activeEntries = entries.filter(e => ((e.project||'').trim().toLowerCase() !== 'pause'));
+    if(activeEntries.some(e => e.start || e.project || e.comment || e.minutes)) dayCount += 1;
+
+    for(const [project, minutes] of groupEntriesByProject(entries)){
+      totals.set(project, (totals.get(project)||0) + minutes);
+    }
+  }
+
+  const rows = Array.from(totals.entries())
+    .filter(([, minutes]) => minutes > 0)
+    .sort((a,b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  const total = rows.reduce((sum, [, minutes]) => sum + minutes, 0);
+  return { rows, total, dayCount };
+}
+
+function formatSummaryDate(dateStr){
+  const date = isoToLocalDate(dateStr);
+  return new Intl.DateTimeFormat('fr-CH', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  }).format(date);
+}
+
+function summaryPeriodModeForRange(startDate, endDate){
+  const week = weekRangeISO(startDate);
+  if(week.start === startDate && week.end === endDate) return 'week';
+  const month = monthRangeISO(startDate);
+  if(month.start === startDate && month.end === endDate) return 'month';
+  return 'custom';
+}
+
+function formatWeekPeriodLabel(startDate, endDate){
+  const start = isoToLocalDate(startDate);
+  const end = isoToLocalDate(endDate);
+  const sameMonth = start.getMonth() === end.getMonth() && start.getFullYear() === end.getFullYear();
+  const sameYear = start.getFullYear() === end.getFullYear();
+  const startOptions = sameMonth
+    ? { day: 'numeric' }
+    : { day: 'numeric', month: 'long', ...(sameYear ? {} : { year: 'numeric' }) };
+  const endOptions = { day: 'numeric', month: 'long', year: 'numeric' };
+  const startLabel = new Intl.DateTimeFormat('fr-CH', startOptions).format(start);
+  const endLabel = new Intl.DateTimeFormat('fr-CH', endOptions).format(end);
+  return `${startLabel} – ${endLabel}`;
+}
+
+function updateSummaryPeriodControls(startDate, endDate){
+  const weekButton = $('#btnPeriodWeek');
+  const monthButton = $('#btnPeriodMonth');
+  const previousButton = $('#btnPreviousPeriod');
+  const nextButton = $('#btnNextPeriod');
+  const label = $('#summaryPeriodLabel');
+  if(!weekButton || !monthButton || !previousButton || !nextButton || !label) return;
+
+  const mode = summaryPeriodModeForRange(startDate, endDate);
+  state.summaryPeriodMode = mode;
+  weekButton.setAttribute('aria-pressed', String(mode === 'week'));
+  monthButton.setAttribute('aria-pressed', String(mode === 'month'));
+  previousButton.disabled = mode === 'custom';
+  nextButton.disabled = mode === 'custom';
+  previousButton.title = mode === 'month' ? 'Mois précédent' : 'Semaine précédente';
+  nextButton.title = mode === 'month' ? 'Mois suivant' : 'Semaine suivante';
+  previousButton.setAttribute('aria-label', previousButton.title);
+  nextButton.setAttribute('aria-label', nextButton.title);
+
+  if(mode === 'week'){
+    label.textContent = formatWeekPeriodLabel(startDate, endDate);
+  } else if(mode === 'month'){
+    label.textContent = new Intl.DateTimeFormat('fr-CH', { month: 'long', year: 'numeric' })
+      .format(isoToLocalDate(startDate));
+  } else {
+    label.textContent = 'Période personnalisée';
+  }
+}
+
+function setSummaryPeriod(mode, anchorDate = todayISO()){
+  const range = mode === 'month' ? monthRangeISO(anchorDate) : weekRangeISO(anchorDate);
+  $('#summaryStartDate').value = range.start;
+  $('#summaryEndDate').value = range.end;
+  const customPeriod = $('#summaryCustomPeriod');
+  if(customPeriod) customPeriod.open = false;
+  state.summaryPeriodMode = mode;
+  updateSummaryUI();
+}
+
+function shiftSummaryPeriod(delta){
+  if(!['week', 'month'].includes(state.summaryPeriodMode)) return;
+  const startDate = $('#summaryStartDate').value;
+  const anchor = isoToLocalDate(startDate);
+  if(state.summaryPeriodMode === 'month'){
+    anchor.setMonth(anchor.getMonth() + delta, 1);
+  } else {
+    anchor.setDate(anchor.getDate() + (delta * 7));
+  }
+  setSummaryPeriod(state.summaryPeriodMode, dateToISO(anchor));
 }
 
 // running minutes removed (no live timers)
 
 function updateSummaryUI(){
   const list = $('#summaryList'); if(!list) return;
-  const rows = groupByProject();
+  const groupList = $('#summaryGroupList');
+  const startInput = $('#summaryStartDate');
+  const endInput = $('#summaryEndDate');
+  const error = $('#summaryRangeError');
+  const empty = $('#summaryEmpty');
+  const currentWeek = currentWeekRangeISO();
+  if(!startInput.value) startInput.value = currentWeek.start;
+  if(!endInput.value) endInput.value = currentWeek.end;
+
+  const startDate = startInput.value;
+  const endDate = endInput.value;
+  updateSummaryPeriodControls(startDate, endDate);
   list.innerHTML = '';
-  let total = 0;
+  if(groupList) groupList.innerHTML = '';
+  const validDate = /^\d{4}-\d{2}-\d{2}$/;
+  if(!validDate.test(startDate) || !validDate.test(endDate) || startDate > endDate){
+    error.textContent = 'La date de début doit être antérieure ou égale à la date de fin.';
+    error.hidden = false;
+    empty.hidden = true;
+    $('#summaryTotal').textContent = '00:00';
+    $('#summaryProjectCount').textContent = '0';
+    $('#summaryDayCount').textContent = '0';
+    $('#summaryRangeLabel').textContent = '';
+    $$('.summary-breakdown', $('#summarySection')).forEach(section => { section.hidden = true; });
+    return;
+  }
+
+  error.hidden = true;
+  const { rows, total, dayCount } = summarizePeriod(startDate, endDate);
+  const groupTotals = new Map();
   for(const [project, minutes] of rows){
-    total += minutes;
+    const group = projectGroup(project);
+    const current = groupTotals.get(group.id) || { group, minutes: 0 };
+    current.minutes += minutes;
+    groupTotals.set(group.id, current);
+  }
+  const groupOrder = new Map(state.meta.projectGroups.map((group, index) => [group.id, index]));
+  const groupedRows = Array.from(groupTotals.values()).sort((a, b) =>
+    (b.minutes - a.minutes) || ((groupOrder.get(a.group.id) ?? 0) - (groupOrder.get(b.group.id) ?? 0))
+  );
+  for(const { group, minutes } of groupedRows){
+    const percentage = total ? (minutes / total) * 100 : 0;
+    const percentageText = `${new Intl.NumberFormat('fr-CH', { maximumFractionDigits: 1 }).format(percentage)} %`;
+    const durationText = minutesToHHMM(minutes);
+    const row = document.createElement('div');
+    row.className = 'summary-group-row';
+    row.style.setProperty('--project-color', group.color);
+    row.setAttribute('role', 'listitem');
+    row.setAttribute('aria-label', `${group.name} : ${percentageText}, ${durationText}`);
+
+    const heading = document.createElement('div');
+    heading.className = 'summary-group-heading';
+    const name = document.createElement('strong');
+    name.className = 'summary-group-name';
+    name.textContent = group.name;
+    const metrics = document.createElement('div');
+    metrics.className = 'summary-group-metrics';
+    const percentageLabel = document.createElement('span');
+    percentageLabel.className = 'summary-group-percentage';
+    percentageLabel.textContent = percentageText;
+    const duration = document.createElement('span');
+    duration.className = 'summary-group-duration';
+    duration.textContent = durationText;
+    metrics.append(percentageLabel, duration);
+    heading.append(name, metrics);
+
+    const bar = document.createElement('div');
+    bar.className = 'summary-bar';
+    bar.setAttribute('aria-hidden', 'true');
+    const barFill = document.createElement('span');
+    barFill.className = 'summary-bar-fill';
+    barFill.style.width = `${percentage}%`;
+    bar.appendChild(barFill);
+    row.append(heading, bar);
+    groupList?.appendChild(row);
+  }
+  for(const [project, minutes] of rows){
     const div = document.createElement('div');
     div.className = 'summary-row';
-    const safeProject = escapeHtml(project);
-    div.innerHTML = `
-      <div>${safeProject}</div>
-      <div>
-        ${minutesToHHMM(minutes)}
-        <button class="secondary btn-copy-comments" data-project="${safeProject}" title="Copier les commentaires">Copier les commentaires</button>
-      </div>
-    `;
+    div.style.setProperty('--project-color', projectColor(project));
+    div.setAttribute('role', 'listitem');
+
+    const projectBlock = document.createElement('div');
+    projectBlock.className = 'summary-project';
+    const projectHeading = document.createElement('div');
+    projectHeading.className = 'summary-project-heading';
+    const projectName = document.createElement('div');
+    projectName.className = 'summary-project-name';
+    projectName.textContent = project;
+    const groupName = document.createElement('span');
+    groupName.className = 'summary-project-group';
+    groupName.textContent = projectGroup(project).name;
+    projectHeading.append(projectName, groupName);
+    const bar = document.createElement('div');
+    bar.className = 'summary-bar';
+    bar.setAttribute('aria-hidden', 'true');
+    const barFill = document.createElement('span');
+    barFill.className = 'summary-bar-fill';
+    const percentage = total ? (minutes / total) * 100 : 0;
+    barFill.style.width = `${percentage}%`;
+    bar.appendChild(barFill);
+    projectBlock.append(projectHeading, bar);
+
+    const meta = document.createElement('div');
+    meta.className = 'summary-row-meta';
+    const duration = document.createElement('span');
+    duration.className = 'summary-duration';
+    duration.textContent = minutesToHHMM(minutes);
+    duration.title = `Durée : ${duration.textContent}`;
+    const percentageLabel = document.createElement('span');
+    percentageLabel.className = 'summary-percentage';
+    percentageLabel.textContent = `${new Intl.NumberFormat('fr-CH', { maximumFractionDigits: 1 }).format(percentage)} %`;
+    percentageLabel.title = `Part du temps : ${percentageLabel.textContent}`;
+    const copyButton = document.createElement('button');
+    copyButton.className = 'secondary btn-copy-comments';
+    copyButton.type = 'button';
+    copyButton.title = 'Copier les commentaires de ce projet sur la période';
+    copyButton.textContent = 'Copier les commentaires';
+    copyButton.addEventListener('click', ()=> copyProjectComments(project, copyButton, startDate, endDate));
+    meta.append(percentageLabel, duration, copyButton);
+    div.append(projectBlock, meta);
     list.appendChild(div);
   }
-  $('#summaryTotal').textContent = `Total: ${minutesToHHMM(total)}`;
-  // Wire copy buttons
-  $$('.btn-copy-comments', list).forEach(btn => {
-    btn.addEventListener('click', async ()=>{
-      const proj = btn.dataset.project || '';
-      await copyProjectComments(proj, btn);
-    });
-  });
+  empty.hidden = rows.length > 0;
+  $$('.summary-breakdown', $('#summarySection')).forEach(section => { section.hidden = rows.length === 0; });
+  $('#summaryTotal').textContent = minutesToHHMM(total);
+  $('#summaryProjectCount').textContent = String(rows.length);
+  $('#summaryDayCount').textContent = String(dayCount);
+  $('#summaryRangeLabel').textContent = startDate === endDate
+    ? formatSummaryDate(startDate)
+    : `Du ${formatSummaryDate(startDate)} au ${formatSummaryDate(endDate)}`;
 }
 
 function escapeHtml(s){
@@ -1089,6 +1462,7 @@ function exportFullYearCSV(){
 
 // -------- Keyboard Shortcuts --------
 function handleGlobalKeys(ev){
+  if(state.activeView !== 'entry') return;
   const tag = (ev.target && ev.target.tagName) || '';
   const typing = ['INPUT','TEXTAREA'].includes(tag);
   const key = ev.key.toLowerCase();
@@ -1168,16 +1542,24 @@ function init(){
   $('#btnAdd')?.addEventListener('click', ()=> addEntry());
   $('#btnAddBreak')?.addEventListener('click', ()=> addPause());
 
-  // Quick select project buttons are now dynamically generated in render()
-
-  // Quick select comment buttons are now dynamically generated in render()
-  $('#btnSummary').addEventListener('click', ()=>{
-    updateSummaryUI();
-    $('#summarySection').hidden = false;
-    $('#summarySection').scrollIntoView({behavior:'smooth'});
+  // Quick select project and comment buttons are generated in render().
+  $('#tabEntryView').addEventListener('click', ()=> navigateToView('entry'));
+  $('#tabStatsView').addEventListener('click', ()=> navigateToView('stats'));
+  $('#viewSwitcher').addEventListener('keydown', (ev)=>{
+    if(!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(ev.key)) return;
+    ev.preventDefault();
+    const nextView = ['ArrowRight', 'End'].includes(ev.key) ? 'stats' : 'entry';
+    navigateToView(nextView);
+    requestAnimationFrame(()=> $(nextView === 'stats' ? '#tabStatsView' : '#tabEntryView')?.focus());
   });
-  $('#btnCloseSummary').addEventListener('click', ()=>{
-    $('#summarySection').hidden = true;
+  window.addEventListener('hashchange', ()=> setActiveView(viewFromLocation()));
+  $('#btnPeriodWeek').addEventListener('click', ()=> setSummaryPeriod('week'));
+  $('#btnPeriodMonth').addEventListener('click', ()=> setSummaryPeriod('month'));
+  $('#btnPreviousPeriod').addEventListener('click', ()=> shiftSummaryPeriod(-1));
+  $('#btnNextPeriod').addEventListener('click', ()=> shiftSummaryPeriod(1));
+  $('#summaryRangeForm').addEventListener('submit', (ev)=>{
+    ev.preventDefault();
+    updateSummaryUI();
   });
   $('#btnExport').addEventListener('click', copyToExcel);
   $('#btnExportFullYear').addEventListener('click', exportFullYearCSV);
@@ -1189,8 +1571,9 @@ function init(){
     if(modal){
       renderSettings();
       modal.hidden = false;
-      // focus the input for quick add
-      $('#newProjectInput')?.focus();
+      // Start at the first setting without scrolling past the group controls.
+      $('#settingsSection').scrollTop = 0;
+      $('#newProjectGroupInput')?.focus({ preventScroll: true });
     }
   });
   btnCloseSettings?.addEventListener('click', ()=>{ if(modal) modal.hidden = true; });
@@ -1210,6 +1593,8 @@ function init(){
   // Settings controls inside modal
   $('#btnAddProject')?.addEventListener('click', ()=> addProjectFromInput());
   $('#newProjectInput')?.addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ e.preventDefault(); addProjectFromInput(); }});
+  $('#btnAddProjectGroup')?.addEventListener('click', ()=> addProjectGroupFromInput());
+  $('#newProjectGroupInput')?.addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ e.preventDefault(); addProjectGroupFromInput(); }});
   $('#btnAddCommentShortcut')?.addEventListener('click', ()=> addCommentShortcutFromInput());
   $('#newCommentShortcutInput')?.addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ e.preventDefault(); addCommentShortcutFromInput(); }});
 
@@ -1223,8 +1608,16 @@ function init(){
   if(state.meta.projects.length === 0){
     const defaultProjects = ['CPO', 'PM', 'FER', 'CDA', 'NOV', 'MRH', 'ADM'];
     state.meta.projects = defaultProjects;
-    saveMeta(state.meta);
   }
+
+  for(const project of state.meta.projects){
+    if(!state.meta.projectGroupAssignments[project]){
+      const preferredId = defaultGroupIdForProject(project);
+      const group = state.meta.projectGroups.find(item => item.id === preferredId) || state.meta.projectGroups[0];
+      if(group) state.meta.projectGroupAssignments[project] = group.id;
+    }
+  }
+  saveMeta(state.meta);
 
   // Initialize with default comment shortcuts if none exist
   if(state.meta.commentShortcuts.length === 0){
@@ -1253,6 +1646,8 @@ function init(){
 
   // Build time picker once
   buildTimePicker();
+
+  setActiveView(viewFromLocation());
 
   // Keep the day warning accurate when the app stays open across midnight.
   state.tickHandle = window.setInterval(updateDateContext, 60_000);
@@ -1366,17 +1761,72 @@ function shiftDay(delta){
 
 // ------ Settings (Projects) ------
 function renderSettings(){
+  const groupsList = $('#projectGroupsSettingsList');
+  groupsList.innerHTML = '';
+  for(const group of state.meta.projectGroups){
+    const row = document.createElement('div');
+    row.className = 'settings-row settings-group-row';
+    row.innerHTML = `
+      <input type="color" class="settings-group-color" value="${escapeHtml(group.color)}" aria-label="Couleur du groupe ${escapeHtml(group.name)}" />
+      <input type="text" class="settings-group-name" value="${escapeHtml(group.name)}" aria-label="Nom du groupe" />
+      <button class="btn-del-project-group" title="Supprimer le groupe" aria-label="Supprimer le groupe ${escapeHtml(group.name)}">×</button>
+    `;
+    const colorInput = $('.settings-group-color', row);
+    const nameInput = $('.settings-group-name', row);
+    const deleteButton = $('.btn-del-project-group', row);
+    deleteButton.disabled = state.meta.projectGroups.length === 1;
+
+    colorInput.addEventListener('input', ()=>{
+      group.color = colorInput.value;
+      saveMeta(state.meta);
+      render();
+      updateSummaryUI();
+    });
+    nameInput.addEventListener('change', ()=>{
+      const newName = nameInput.value.trim();
+      if(!newName || state.meta.projectGroups.some(item => item.id !== group.id && item.name === newName)){
+        nameInput.value = group.name;
+        return;
+      }
+      group.name = newName;
+      saveMeta(state.meta);
+      render();
+      updateSummaryUI();
+      renderSettings();
+    });
+    deleteButton.addEventListener('click', ()=>{
+      if(state.meta.projectGroups.length === 1) return;
+      state.meta.projectGroups = state.meta.projectGroups.filter(item => item.id !== group.id);
+      const fallbackId = state.meta.projectGroups[0].id;
+      for(const project of state.meta.projects){
+        if(state.meta.projectGroupAssignments[project] === group.id){
+          state.meta.projectGroupAssignments[project] = fallbackId;
+        }
+      }
+      saveMeta(state.meta);
+      render();
+      updateSummaryUI();
+      renderSettings();
+    });
+    groupsList.appendChild(row);
+  }
+
   // Render projects settings
   const projectsList = $('#projectsSettingsList');
   projectsList.innerHTML = '';
   for(const p of state.meta.projects){
     const li = document.createElement('div');
-    li.className = 'settings-row';
+    li.className = 'settings-row settings-project-row';
+    const groupOptions = state.meta.projectGroups.map(group => `
+      <option value="${escapeHtml(group.id)}" ${state.meta.projectGroupAssignments[p] === group.id ? 'selected' : ''}>${escapeHtml(group.name)}</option>
+    `).join('');
     li.innerHTML = `
       <input type="text" class="settings-project" value="${escapeHtml(p)}" />
+      <select class="settings-project-group" aria-label="Groupe du projet ${escapeHtml(p)}">${groupOptions}</select>
       <button class="btn-del-project" title="Supprimer">×</button>
     `;
     const input = li.querySelector('.settings-project');
+    const groupSelect = li.querySelector('.settings-project-group');
     const btnDel = li.querySelector('.btn-del-project');
     input.addEventListener('change', ()=>{
       const newName = input.value.trim();
@@ -1388,14 +1838,30 @@ function renderSettings(){
         input.value = oldName; return;
       }
       const idx = state.meta.projects.indexOf(oldName);
-      if(idx>=0){ state.meta.projects.splice(idx,1,newName); state.meta.projects.sort((a,b)=> a.localeCompare(b)); saveMeta(state.meta); }
+      if(idx>=0){
+        state.meta.projects.splice(idx,1,newName);
+        state.meta.projects.sort((a,b)=> a.localeCompare(b));
+        state.meta.projectGroupAssignments[newName] = state.meta.projectGroupAssignments[oldName];
+        delete state.meta.projectGroupAssignments[oldName];
+        saveMeta(state.meta);
+      }
       // Update datalist and quick-select buttons
       render();
       renderSettings();
     });
+    groupSelect.addEventListener('change', ()=>{
+      state.meta.projectGroupAssignments[p] = groupSelect.value;
+      saveMeta(state.meta);
+      render();
+      updateSummaryUI();
+    });
     btnDel.addEventListener('click', ()=>{
       const idx = state.meta.projects.indexOf(p);
-      if(idx>=0){ state.meta.projects.splice(idx,1); saveMeta(state.meta); }
+      if(idx>=0){
+        state.meta.projects.splice(idx,1);
+        delete state.meta.projectGroupAssignments[p];
+        saveMeta(state.meta);
+      }
       render();
       renderSettings();
     });
@@ -1439,6 +1905,17 @@ function renderSettings(){
   }
 }
 
+function addProjectGroupFromInput(){
+  const input = $('#newProjectGroupInput');
+  const name = (input.value || '').trim();
+  if(!name || state.meta.projectGroups.some(group => group.name === name)) return;
+  const color = GROUP_COLOR_PALETTE[state.meta.projectGroups.length % GROUP_COLOR_PALETTE.length];
+  state.meta.projectGroups.push({ id: `group-${makeId()}`, name, color });
+  saveMeta(state.meta);
+  input.value = '';
+  renderSettings();
+}
+
 function addProjectFromInput(){
   const inp = $('#newProjectInput');
   const name = (inp.value||'').trim();
@@ -1474,6 +1951,8 @@ function renderQuickSelectButtons(){
     const btn = document.createElement('button');
     btn.className = 'quick-btn';
     btn.dataset.project = p;
+    btn.style.setProperty('--project-color', projectColor(p));
+    btn.title = `Groupe : ${projectGroup(p).name}`;
     btn.textContent = p;
     btn.addEventListener('click', handleQuickProjectSelect);
     container.appendChild(btn);
@@ -1587,12 +2066,14 @@ async function copyText(text){
   return ok;
 }
 
-async function copyProjectComments(projectDisplayName, btn){
+async function copyProjectComments(projectDisplayName, btn, startDate = state.date, endDate = state.date){
   const isSansProjet = (projectDisplayName || '').trim() === 'Sans projet';
-  const matched = (state.data.entries||[]).filter(e=>{
-    const p = (e.project||'').trim();
-    return isSansProjet ? p === '' : p === projectDisplayName;
-  });
+  const matched = storedDaysInRange(startDate, endDate).flatMap(day =>
+    (day.data.entries||[]).filter(e=>{
+      const p = (e.project||'').trim();
+      return isSansProjet ? p === '' : p === projectDisplayName;
+    })
+  );
   const comments = matched.map(e => (e.comment||'').trim()).filter(Boolean);
   const text = comments.join('\n');
   const ok = await copyText(text);
