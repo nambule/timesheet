@@ -1162,15 +1162,19 @@ function updateSummaryUI(){
   const groupedRows = Array.from(groupTotals.values()).sort((a, b) =>
     (b.minutes - a.minutes) || ((groupOrder.get(a.group.id) ?? 0) - (groupOrder.get(b.group.id) ?? 0))
   );
+  const theoreticalMinutes = dayCount * 8 * 60;
   for(const { group, minutes } of groupedRows){
     const percentage = total ? (minutes / total) * 100 : 0;
     const percentageText = `${new Intl.NumberFormat('fr-CH', { maximumFractionDigits: 1 }).format(percentage)} %`;
+    const theoreticalPercentage = theoreticalMinutes ? (minutes / theoreticalMinutes) * 100 : 0;
+    const theoreticalPercentageText = `${new Intl.NumberFormat('fr-CH', { maximumFractionDigits: 1 }).format(theoreticalPercentage)} %`;
+    const theoreticalHoursText = `${dayCount * 8} h`;
     const durationText = minutesToHHMM(minutes);
     const row = document.createElement('div');
     row.className = 'summary-group-row';
     row.style.setProperty('--project-color', group.color);
     row.setAttribute('role', 'listitem');
-    row.setAttribute('aria-label', `${group.name} : ${percentageText}, ${durationText}`);
+    row.setAttribute('aria-label', `${group.name} : ${percentageText} du temps saisi, ${theoreticalPercentageText} du temps théorique, ${durationText}`);
 
     const heading = document.createElement('div');
     heading.className = 'summary-group-heading';
@@ -1195,7 +1199,11 @@ function updateSummaryUI(){
     barFill.className = 'summary-bar-fill';
     barFill.style.width = `${percentage}%`;
     bar.appendChild(barFill);
-    row.append(heading, bar);
+    const theoretical = document.createElement('div');
+    theoretical.className = 'summary-group-theoretical';
+    theoretical.textContent = `${theoreticalPercentageText} du temps théorique · base ${theoreticalHoursText}`;
+    theoretical.title = `${durationText} sur ${theoreticalHoursText} théoriques`;
+    row.append(heading, bar, theoretical);
     groupList?.appendChild(row);
   }
   for(const [project, minutes] of rows){

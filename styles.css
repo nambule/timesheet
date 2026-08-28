@@ -571,6 +571,7 @@ input[type="date"]:focus, input[type="text"]:focus{outline:none;border-color:tra
 .summary-group-metrics{display:flex;align-items:baseline;gap:8px;white-space:nowrap}
 .summary-group-percentage{color:var(--project-color,var(--accent-a));font-size:21px;font-weight:800}
 .summary-group-duration{color:var(--muted);font-size:12px;font-weight:700;font-variant-numeric:tabular-nums}
+.summary-group-theoretical{color:var(--muted);font-size:11px;font-weight:600;line-height:1.35;text-align:right;font-variant-numeric:tabular-nums}
 .summary-list{display:flex;flex-direction:column;gap:8px}
 .summary-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:20px;align-items:center;padding:12px 14px;border:1px solid var(--border);border-radius:11px;background:#fff}
 .summary-project{display:flex;flex-direction:column;gap:8px;min-width:0}
