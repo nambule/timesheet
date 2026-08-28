@@ -39,7 +39,7 @@ body{
   box-shadow: 0 2px 0 rgba(0,0,0,0.02), 0 10px 26px rgba(2,6,23,.08);
 }
 .brand{display:flex;align-items:center;gap:10px}
-.brand .logo{font-size:18px;width:36px;height:36px;display:grid;place-items:center;border-radius:12px;background:linear-gradient(135deg, var(--accent-a), var(--accent-b));color:#fff}
+.brand .logo{width:36px;height:36px;display:block}
 .brand .title{font-weight:800;letter-spacing:0.2px;opacity:1;background:linear-gradient(135deg, var(--accent-a), var(--accent-b));-webkit-background-clip:text;background-clip:text;color:transparent}
 .toolbar{display:flex;gap:10px;flex-wrap:wrap}
 button, input, select{font:inherit}
