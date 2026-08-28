@@ -6,16 +6,18 @@ const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 const START_SORT_DEBOUNCE_MS = 400;
 const IMMEDIATE_SORT_TRIGGERS = ['btn-start-inc', 'btn-start-dec'];
 const GROUP_COLOR_PALETTE = ['#6d4aff', '#0f8fa3', '#d97706', '#2563eb', '#be185d', '#4f46e5', '#0f766e'];
+const DEFAULT_PROJECTS = ['Projet Alpha', 'Projet Beta', 'Interne', 'Administratif'];
+const DEFAULT_COMMENT_SHORTCUTS = ['Réunion', 'Suivi', 'Préparation', 'Documentation', 'Support'];
 const DEFAULT_PROJECT_GROUPS = [
-  { id: 'pm-cpo', name: 'PM + CPO', color: '#6d4aff' },
-  { id: 'adm', name: 'ADM', color: '#0f8fa3' },
-  { id: 'other', name: 'Autres', color: '#d97706' },
+  { id: 'projects', name: 'Projets', color: '#6d4aff' },
+  { id: 'internal', name: 'Interne', color: '#0f8fa3' },
+  { id: 'admin', name: 'Administratif', color: '#d97706' },
 ];
 
 function defaultGroupIdForProject(project){
-  if(['PM', 'CPO'].includes(project)) return 'pm-cpo';
-  if(project === 'ADM') return 'adm';
-  return 'other';
+  if(project === 'Interne') return 'internal';
+  if(project === 'Administratif') return 'admin';
+  return 'projects';
 }
 
 function normalizeProjectGroups(meta){
@@ -128,6 +130,7 @@ function loadMeta(){
         commentShortcuts: [],
         projectGroups: DEFAULT_PROJECT_GROUPS.map(group => ({ ...group })),
         projectGroupAssignments: {},
+        initialized: false,
       };
     }
     const meta = JSON.parse(raw);
@@ -146,6 +149,7 @@ function loadMeta(){
       commentShortcuts: meta.commentShortcuts,
       projectGroups: normalizedGroups.groups,
       projectGroupAssignments: normalizedGroups.assignments,
+      initialized: true,
     };
   }catch(e){
     console.error('Load meta error', e);
@@ -154,6 +158,7 @@ function loadMeta(){
       commentShortcuts: [],
       projectGroups: DEFAULT_PROJECT_GROUPS.map(group => ({ ...group })),
       projectGroupAssignments: {},
+      initialized: false,
     };
   }
 }
@@ -162,7 +167,8 @@ function saveMeta(meta){
     projects: meta.projects||[],
     commentShortcuts: meta.commentShortcuts||[],
     projectGroups: meta.projectGroups||[],
-    projectGroupAssignments: meta.projectGroupAssignments||{}
+    projectGroupAssignments: meta.projectGroupAssignments||{},
+    initialized: true
   }));
 }
 function ensureProject(project){
@@ -339,7 +345,7 @@ const state = {
   activeView: window.location.hash === '#statistiques' ? 'stats' : 'entry',
   summaryPeriodMode: 'week',
   data: { entries: [], projects: [] },
-  meta: { projects: [], commentShortcuts: [], projectGroups: [], projectGroupAssignments: {} },
+  meta: { projects: [], commentShortcuts: [], projectGroups: [], projectGroupAssignments: {}, initialized: false },
   tickHandle: null,
   focusedId: null,
   focusedField: null, // Track which field is focused: 'project', 'comment', 'start', or null
@@ -1642,10 +1648,11 @@ function init(){
   state.meta = loadMeta();
   state.data = loadDay(state.date);
   
-  // Initialize with default projects if none exist
-  if(state.meta.projects.length === 0){
-    const defaultProjects = ['CPO', 'PM', 'FER', 'CDA', 'NOV', 'MRH', 'ADM'];
-    state.meta.projects = defaultProjects;
+  // Seed neutral examples only on the very first launch.
+  if(!state.meta.initialized){
+    state.meta.projects = [...DEFAULT_PROJECTS];
+    state.meta.commentShortcuts = [...DEFAULT_COMMENT_SHORTCUTS];
+    state.meta.initialized = true;
   }
 
   for(const project of state.meta.projects){
@@ -1656,13 +1663,6 @@ function init(){
     }
   }
   saveMeta(state.meta);
-
-  // Initialize with default comment shortcuts if none exist
-  if(state.meta.commentShortcuts.length === 0){
-    const defaultComments = ['IA', 'GTA', 'KM', 'RGPD', 'GESTPROC'];
-    state.meta.commentShortcuts = defaultComments;
-    saveMeta(state.meta);
-  }
   
   sortEntriesByStartInPlace();
   if((state.data.entries||[]).length === 0){
