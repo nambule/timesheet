@@ -64,6 +64,20 @@
         <div class="col col-actions" aria-hidden="true"></div>
       </div>
       <div id="entryList" class="entry-list" role="list" aria-label="Entrées de temps du jour"></div>
+      <section class="daily-recap" aria-labelledby="dailyRecapTitle">
+        <div class="daily-recap-header">
+          <div>
+            <div class="daily-recap-eyebrow">Journée affichée</div>
+            <h2 id="dailyRecapTitle">Récapitulatif par projet</h2>
+          </div>
+          <div class="daily-recap-total">
+            <span>Total</span>
+            <strong id="dailyRecapTotal">00:00</strong>
+          </div>
+        </div>
+        <div id="dailyRecapList" class="daily-recap-list" role="list"></div>
+        <div id="dailyRecapEmpty" class="daily-recap-empty" hidden>Aucun temps calculable pour cette journée.</div>
+      </section>
     </section>
 
     <section class="summary" id="summarySection" role="tabpanel" aria-labelledby="tabStatsView" hidden>

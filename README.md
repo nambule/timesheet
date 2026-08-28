@@ -1,6 +1,6 @@
 # Timesheet
 
-Timesheet est une application web légère pour saisir son temps de travail au fil de la journée et analyser sa répartition par projet. Elle fonctionne directement dans le navigateur, sans compte ni serveur, et conserve toutes les données localement.
+Timesheet est une application web légère pour saisir son temps de travail au fil de la journée et analyser sa répartition par projet. Elle fonctionne directement dans le navigateur, sans compte ni serveur, conserve toutes les données localement et peut être [testée en ligne](https://nambule.github.io/timesheet).
 
 ## Ce que permet l’application
 
@@ -12,6 +12,7 @@ Timesheet est une application web légère pour saisir son temps de travail au f
 - Naviguer entre les journées tout en voyant clairement si la date affichée est aujourd’hui.
 - Réutiliser les projets et commentaires fréquents grâce aux raccourcis et à l’auto-complétion.
 - Regrouper les projets et personnaliser la couleur de chaque groupe depuis les réglages.
+- Contrôler le total de la journée par projet et copier rapidement les commentaires associés.
 
 ### Analyser son temps
 

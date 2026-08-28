@@ -98,6 +98,27 @@ input[type="date"]:focus, input[type="text"]:focus{outline:none;border-color:tra
   opacity: 0.9;
   transform: scale(0.998);
 }
+.daily-recap{
+  margin-top:4px;
+  padding:18px;
+  border:1px solid var(--border);
+  border-radius:var(--radius);
+  background:#fff;
+  box-shadow:var(--shadow-soft);
+}
+.daily-recap-header{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:14px}
+.daily-recap-eyebrow{color:var(--muted);font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}
+.daily-recap h2{margin:3px 0 0;font-size:17px}
+.daily-recap-total{display:flex;align-items:baseline;gap:8px;padding:8px 11px;border-radius:10px;background:var(--panel-2)}
+.daily-recap-total span{color:var(--muted);font-size:12px;font-weight:600}
+.daily-recap-total strong{color:var(--accent-a);font-size:19px;font-variant-numeric:tabular-nums}
+.daily-recap-list{display:flex;flex-direction:column;gap:7px}
+.daily-recap-row{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:12px;padding:9px 11px;border:1px solid var(--border);border-radius:10px;background:var(--panel-2)}
+.daily-recap-project{display:flex;align-items:center;gap:8px;min-width:0;font-weight:700}
+.daily-recap-project::before{content:"";flex:0 0 auto;width:8px;height:8px;border-radius:50%;background:var(--project-color,var(--accent-a))}
+.daily-recap-duration{color:var(--text);font-size:13px;font-weight:800;font-variant-numeric:tabular-nums}
+.daily-recap-copy{padding:7px 10px;font-size:12px}
+.daily-recap-empty{padding:16px;text-align:center;color:var(--muted);border:1px dashed var(--border);border-radius:10px}
 .ghost-placeholder{
   border:2px dashed rgba(124,58,237,.35);
   border-radius:var(--radius);
@@ -657,6 +678,10 @@ input[type="date"]:focus, input[type="text"]:focus{outline:none;border-color:tra
   .summary-row{grid-template-columns:1fr;gap:10px}
   .summary-row-meta{justify-content:flex-start;flex-wrap:wrap}
   .summary-row .btn-copy-comments{margin-left:auto}
+  .daily-recap{padding:16px}
+  .daily-recap-header{align-items:center}
+  .daily-recap-row{grid-template-columns:minmax(0,1fr) auto}
+  .daily-recap-copy{grid-column:1 / -1;width:100%}
 }
 
 @media (prefers-reduced-motion: reduce){

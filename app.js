@@ -610,6 +610,7 @@ function render(){
     list.appendChild(node);
   });
   renderGhostPlaceholder(list);
+  updateDailyRecapUI();
 }
 
 function captureGhostPlaceholderSnapshot(entryId){
@@ -953,6 +954,42 @@ function groupByProject(){
   return groupEntriesByProject(state.data.entries);
 }
 
+function updateDailyRecapUI(){
+  const list = $('#dailyRecapList');
+  const totalElement = $('#dailyRecapTotal');
+  const empty = $('#dailyRecapEmpty');
+  if(!list || !totalElement || !empty) return;
+
+  const rows = groupByProject().filter(([, minutes]) => minutes > 0);
+  const total = rows.reduce((sum, [, minutes]) => sum + minutes, 0);
+  list.innerHTML = '';
+
+  for(const [project, minutes] of rows){
+    const row = document.createElement('div');
+    row.className = 'daily-recap-row';
+    row.style.setProperty('--project-color', projectColor(project));
+    row.setAttribute('role', 'listitem');
+
+    const projectName = document.createElement('div');
+    projectName.className = 'daily-recap-project';
+    projectName.textContent = project;
+    const duration = document.createElement('span');
+    duration.className = 'daily-recap-duration';
+    duration.textContent = minutesToHHMM(minutes);
+    const copyButton = document.createElement('button');
+    copyButton.className = 'secondary daily-recap-copy';
+    copyButton.type = 'button';
+    copyButton.textContent = 'Copier les commentaires';
+    copyButton.title = `Copier les commentaires de ${project}`;
+    copyButton.addEventListener('click', ()=> copyProjectComments(project, copyButton));
+    row.append(projectName, duration, copyButton);
+    list.appendChild(row);
+  }
+
+  totalElement.textContent = minutesToHHMM(total);
+  empty.hidden = rows.length > 0;
+}
+
 function storedDaysInRange(startDate, endDate){
   const dates = new Set();
   for(let i = 0; i < localStorage.length; i++){
@@ -1077,6 +1114,7 @@ function shiftSummaryPeriod(delta){
 // running minutes removed (no live timers)
 
 function updateSummaryUI(){
+  updateDailyRecapUI();
   const list = $('#summaryList'); if(!list) return;
   const groupList = $('#summaryGroupList');
   const startInput = $('#summaryStartDate');
