@@ -22,6 +22,7 @@ Timesheet est une application web légère pour saisir son temps de travail au f
 - Définir librement une autre période.
 - Comparer les projets avec leurs durées, pourcentages et barres de répartition, colorées selon leur groupe.
 - Comparer la part de chaque groupe au temps théorique de 8 heures par journée renseignée.
+- Voir le temps théorique total et l’écart signé correspondant aux heures supplémentaires.
 
 ### Exporter les données
 

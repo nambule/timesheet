@@ -202,6 +202,13 @@ function minutesToHHMM(min){
   return `${String(h).padStart(2,'0')}:${String(mm).padStart(2,'0')}`;
 }
 
+function minutesToSignedHHMM(minutes){
+  const rounded = Math.round(minutes);
+  if(rounded === 0) return '00:00';
+  const sign = rounded > 0 ? '+' : '−';
+  return `${sign}${minutesToHHMM(Math.abs(rounded))}`;
+}
+
 function hhmmToMinutes(str){
   if(!str) return 0;
   const m = str.match(/^(\d{1,2}):(\d{2})$/);
@@ -1142,8 +1149,10 @@ function updateSummaryUI(){
     error.hidden = false;
     empty.hidden = true;
     $('#summaryTotal').textContent = '00:00';
-    $('#summaryProjectCount').textContent = '0';
+    $('#summaryTheoretical').textContent = '00:00';
     $('#summaryDayCount').textContent = '0';
+    $('#summaryOvertime').textContent = '00:00';
+    $('#summaryOvertimeStat').classList.remove('is-positive', 'is-negative');
     $('#summaryRangeLabel').textContent = '';
     $$('.summary-breakdown', $('#summarySection')).forEach(section => { section.hidden = true; });
     return;
@@ -1256,8 +1265,19 @@ function updateSummaryUI(){
   empty.hidden = rows.length > 0;
   $$('.summary-breakdown', $('#summarySection')).forEach(section => { section.hidden = rows.length === 0; });
   $('#summaryTotal').textContent = minutesToHHMM(total);
-  $('#summaryProjectCount').textContent = String(rows.length);
+  $('#summaryTheoretical').textContent = minutesToHHMM(theoreticalMinutes);
   $('#summaryDayCount').textContent = String(dayCount);
+  const overtime = total - theoreticalMinutes;
+  const overtimeElement = $('#summaryOvertime');
+  const overtimeStat = $('#summaryOvertimeStat');
+  overtimeElement.textContent = minutesToSignedHHMM(overtime);
+  overtimeStat.classList.toggle('is-positive', overtime > 0);
+  overtimeStat.classList.toggle('is-negative', overtime < 0);
+  overtimeStat.title = overtime > 0
+    ? 'Heures supplémentaires au-delà du temps théorique'
+    : overtime < 0
+      ? 'Temps restant avant d’atteindre le temps théorique'
+      : 'Le temps total correspond au temps théorique';
   $('#summaryRangeLabel').textContent = startDate === endDate
     ? formatSummaryDate(startDate)
     : `Du ${formatSummaryDate(startDate)} au ${formatSummaryDate(endDate)}`;

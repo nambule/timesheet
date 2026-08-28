@@ -545,11 +545,13 @@ input[type="date"]:focus, input[type="text"]:focus{outline:none;border-color:tra
 .summary-range input{width:100%;color:var(--text);font-weight:600;text-transform:none}
 .summary-range button{min-height:44px}
 .summary-error{margin:10px 0 0;padding:10px 12px;border-radius:10px;background:#fef2f2;color:#b91c1c;font-weight:600}
-.summary-overview{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:14px 0}
+.summary-overview{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:14px 0}
 .summary-stat{display:flex;flex-direction:column;gap:5px;padding:13px 15px;border:1px solid var(--border);border-radius:11px;background:var(--panel-2)}
 .summary-stat span{color:var(--muted);font-size:12px;font-weight:600}
 .summary-stat strong{font-size:22px;line-height:1;color:var(--text)}
 .summary-stat:first-child strong{color:var(--accent-a)}
+.summary-stat.is-positive strong{color:var(--other-day)}
+.summary-stat.is-negative strong{color:var(--muted)}
 .summary-breakdown{margin-top:22px}
 .summary-section-heading{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:10px}
 .summary-section-heading h3{margin:0;font-size:15px}
@@ -674,7 +676,6 @@ input[type="date"]:focus, input[type="text"]:focus{outline:none;border-color:tra
   .summary-range{grid-template-columns:1fr 1fr}
   .summary-range button{grid-column:1 / -1}
   .summary-overview{grid-template-columns:1fr 1fr}
-  .summary-stat:first-child{grid-column:1 / -1}
   .summary-group-list{grid-template-columns:1fr}
   .summary-row{grid-template-columns:1fr;gap:10px}
   .summary-row-meta{justify-content:flex-start;flex-wrap:wrap}
