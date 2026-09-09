@@ -131,6 +131,19 @@
           <strong id="summaryOvertime">00:00</strong>
         </div>
       </div>
+      <div class="summary-nf-overview" aria-live="polite">
+        <div class="summary-nf-heading">
+          <div>
+            <span>Temps non facturé</span>
+            <strong id="summaryNfDuration">00:00</strong>
+          </div>
+          <div class="summary-nf-rate">
+            <strong id="summaryNfRate">0 %</strong>
+            <span>du temps total</span>
+          </div>
+        </div>
+        <div class="summary-nf-bar" aria-hidden="true"><span id="summaryNfBarFill"></span></div>
+      </div>
       <section class="summary-breakdown summary-groups-breakdown" aria-labelledby="summaryGroupsTitle">
         <div class="summary-section-heading">
           <h3 id="summaryGroupsTitle">Par groupe de projets</h3>
@@ -180,6 +193,7 @@
       </div>
 
       <div class="field actions">
+        <button class="btn-nf" type="button" aria-pressed="false" title="Marquer comme non facturé">NF</button>
         <button class="btn-del" title="Supprimer">×</button>
       </div>
     </div>

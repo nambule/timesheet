@@ -7,12 +7,14 @@ Timesheet est une application web légère pour saisir son temps de travail au f
 ### Saisir sa journée
 
 - Ajouter rapidement une activité, un projet et un commentaire.
+- Marquer individuellement une activité comme non facturée (NF).
 - Calculer automatiquement la durée d’une activité jusqu’au début de la suivante.
 - Ajouter des pauses, exclues des statistiques et des exports de temps travaillé.
 - Naviguer entre les journées tout en voyant clairement si la date affichée est aujourd’hui.
 - Réutiliser les projets et commentaires fréquents grâce aux raccourcis et à l’auto-complétion.
 - Regrouper les projets et personnaliser la couleur de chaque groupe depuis les réglages.
 - Contrôler le total de la journée par projet et copier rapidement les commentaires associés.
+- Afficher, pour chaque projet, une ligne normale et une ligne NF distinctes, avec copie séparée des commentaires.
 
 ### Analyser son temps
 
@@ -23,12 +25,12 @@ Timesheet est une application web légère pour saisir son temps de travail au f
 - Comparer les projets avec leurs durées, pourcentages et barres de répartition, colorées selon leur groupe.
 - Comparer la part de chaque groupe au temps théorique de 8 heures par journée renseignée.
 - Voir le temps théorique total et l’écart signé correspondant aux heures supplémentaires.
+- Suivre la durée et le taux de temps non facturé, globalement et par projet.
 
 ### Exporter les données
 
 - Copier les entrées de la journée dans un format prêt à coller dans Excel.
 - Exporter l’année complète au format CSV.
-- Copier les commentaires associés à un projet sur la période analysée.
 
 ## Démarrage rapide
 

@@ -61,7 +61,7 @@ function projectColor(project){
 }
 
 // -------- Data Model --------
-// Entry: { id, project, comment, minutes, start }
+// Entry: { id, project, comment, minutes, start, nonBillable }
 // Day data key: ts:YYYY-MM-DD
 // Meta key (global): ts:meta -> projects, shortcuts, groups and project assignments
 
@@ -109,6 +109,7 @@ function loadDay(dateStr){
     if(!raw) return { entries: [], projects: [] };
     const data = JSON.parse(raw);
     data.entries = data.entries || [];
+    data.entries.forEach(entry => { entry.nonBillable = Boolean(entry.nonBillable); });
     data.projects = data.projects || [];
     return data;
   }catch(e){
@@ -460,6 +461,7 @@ function render(){
     const inputStart = $('.input-start', node);
     const btnStartInc = $('.btn-start-inc', node);
     const btnStartDec = $('.btn-start-dec', node);
+    const btnNf = $('.btn-nf', node);
     // no end buttons
     // duration +/- buttons removed
     const btnDel = $('.btn-del', node);
@@ -469,6 +471,10 @@ function render(){
     inputStart.value = e.start || '';
     inputStart.setAttribute('aria-invalid', startConflict ? 'true' : 'false');
     inputStart.title = startConflict ? 'Deux entrées ont la même heure de début. Modifiez-en une.' : '';
+    node.classList.toggle('non-billable', Boolean(e.nonBillable));
+    btnNf.classList.toggle('active', Boolean(e.nonBillable));
+    btnNf.setAttribute('aria-pressed', String(Boolean(e.nonBillable)));
+    btnNf.setAttribute('aria-label', e.nonBillable ? 'Retirer le statut non facturé' : 'Marquer comme non facturé');
     const minsEl = $('.duration-min', node);
     if(minsEl) minsEl.textContent = minutesToHHMM(visibleMinutes(e));
 
@@ -610,6 +616,16 @@ function render(){
     // duration +/- buttons removed
     btnStartInc.addEventListener('click', ()=> adjustStart(e.id, +15));
     btnStartDec.addEventListener('click', ()=> adjustStart(e.id, -15));
+    btnNf.addEventListener('click', ()=>{
+      e.nonBillable = !e.nonBillable;
+      persist();
+      node.classList.toggle('non-billable', e.nonBillable);
+      btnNf.classList.toggle('active', e.nonBillable);
+      btnNf.setAttribute('aria-pressed', String(e.nonBillable));
+      btnNf.setAttribute('aria-label', e.nonBillable ? 'Retirer le statut non facturé' : 'Marquer comme non facturé');
+      updateDailyRecapUI();
+      updateSummaryUI();
+    });
     btnDel.addEventListener('click', ()=> removeEntry(e.id));
 
     // no custom suggestion click handlers
@@ -705,6 +721,7 @@ function addEntry(prefill={}){
     project: prefill.project || '',
     comment: prefill.comment || '',
     minutes: prefill.minutes ?? 0,
+    nonBillable: Boolean(prefill.nonBillable),
     start: prefill.start !== undefined
       ? prefill.start
       : (isToday ? nowRoundedHHMM() : ''),
@@ -726,6 +743,7 @@ function addEmptyEntry(){
     project: '',
     comment: '',
     minutes: 0,
+    nonBillable: false,
     start: '',
   };
   state.data.entries.push(entry);
@@ -950,7 +968,7 @@ function persist(){
 }
 
 // -------- Summary --------
-function groupEntriesByProject(entries){
+function projectBreakdownsForEntries(entries){
   const acc = new Map();
   for(const e of entries){
     // Skip pause activities in the recap
@@ -958,9 +976,21 @@ function groupEntriesByProject(entries){
     if(isPause) continue;
 
     const project = (e.project||'Sans projet').trim() || 'Sans projet';
-    acc.set(project, (acc.get(project)||0) + visibleMinutesForDay(entries, e));
+    const minutes = visibleMinutesForDay(entries, e);
+    const breakdown = acc.get(project) || { total: 0, normal: 0, nonBillable: 0 };
+    breakdown.total += minutes;
+    if(e.nonBillable){
+      breakdown.nonBillable += minutes;
+    } else {
+      breakdown.normal += minutes;
+    }
+    acc.set(project, breakdown);
   }
   return Array.from(acc.entries()).sort((a,b)=> a[0].localeCompare(b[0]));
+}
+
+function groupEntriesByProject(entries){
+  return projectBreakdownsForEntries(entries).map(([project, breakdown]) => [project, breakdown.total]);
 }
 
 function groupByProject(){
@@ -973,28 +1003,39 @@ function updateDailyRecapUI(){
   const empty = $('#dailyRecapEmpty');
   if(!list || !totalElement || !empty) return;
 
-  const rows = groupByProject().filter(([, minutes]) => minutes > 0);
-  const total = rows.reduce((sum, [, minutes]) => sum + minutes, 0);
+  const rows = projectBreakdownsForEntries(state.data.entries).flatMap(([project, breakdown]) => [
+    ...(breakdown.normal > 0 ? [{ project, minutes: breakdown.normal, nonBillable: false }] : []),
+    ...(breakdown.nonBillable > 0 ? [{ project, minutes: breakdown.nonBillable, nonBillable: true }] : []),
+  ]);
+  const total = rows.reduce((sum, row) => sum + row.minutes, 0);
   list.innerHTML = '';
 
-  for(const [project, minutes] of rows){
+  for(const { project, minutes, nonBillable } of rows){
     const row = document.createElement('div');
     row.className = 'daily-recap-row';
+    row.classList.toggle('is-nf', nonBillable);
     row.style.setProperty('--project-color', projectColor(project));
     row.setAttribute('role', 'listitem');
+    row.setAttribute('aria-label', `${project}, ${nonBillable ? 'non facturé' : 'normal'}, ${minutesToHHMM(minutes)}`);
 
     const projectName = document.createElement('div');
     projectName.className = 'daily-recap-project';
-    projectName.textContent = project;
-    const duration = document.createElement('span');
+    const projectLabel = document.createElement('span');
+    projectLabel.textContent = project;
+    const typeBadge = document.createElement('span');
+    typeBadge.className = 'daily-recap-type';
+    typeBadge.classList.toggle('is-nf', nonBillable);
+    typeBadge.textContent = nonBillable ? 'NF' : 'Normal';
+    projectName.append(projectLabel, typeBadge);
+    const duration = document.createElement('strong');
     duration.className = 'daily-recap-duration';
     duration.textContent = minutesToHHMM(minutes);
     const copyButton = document.createElement('button');
     copyButton.className = 'secondary daily-recap-copy';
     copyButton.type = 'button';
     copyButton.textContent = 'Copier les commentaires';
-    copyButton.title = `Copier les commentaires de ${project}`;
-    copyButton.addEventListener('click', ()=> copyProjectComments(project, copyButton));
+    copyButton.title = `Copier les commentaires ${nonBillable ? 'NF' : 'normaux'} de ${project}`;
+    copyButton.addEventListener('click', ()=> copyProjectComments(project, copyButton, state.date, state.date, nonBillable));
     row.append(projectName, duration, copyButton);
     list.appendChild(row);
   }
@@ -1030,16 +1071,21 @@ function summarizePeriod(startDate, endDate){
     const activeEntries = entries.filter(e => ((e.project||'').trim().toLowerCase() !== 'pause'));
     if(activeEntries.some(e => e.start || e.project || e.comment || e.minutes)) dayCount += 1;
 
-    for(const [project, minutes] of groupEntriesByProject(entries)){
-      totals.set(project, (totals.get(project)||0) + minutes);
+    for(const [project, breakdown] of projectBreakdownsForEntries(entries)){
+      const current = totals.get(project) || { total: 0, nonBillable: 0 };
+      current.total += breakdown.total;
+      current.nonBillable += breakdown.nonBillable;
+      totals.set(project, current);
     }
   }
 
   const rows = Array.from(totals.entries())
+    .map(([project, breakdown]) => [project, breakdown.total, breakdown.nonBillable])
     .filter(([, minutes]) => minutes > 0)
     .sort((a,b) => b[1] - a[1] || a[0].localeCompare(b[0]));
   const total = rows.reduce((sum, [, minutes]) => sum + minutes, 0);
-  return { rows, total, dayCount };
+  const nonBillableTotal = rows.reduce((sum, [, , nonBillable]) => sum + nonBillable, 0);
+  return { rows, total, dayCount, nonBillableTotal };
 }
 
 function formatSummaryDate(dateStr){
@@ -1153,13 +1199,16 @@ function updateSummaryUI(){
     $('#summaryDayCount').textContent = '0';
     $('#summaryOvertime').textContent = '00:00';
     $('#summaryOvertimeStat').classList.remove('is-positive', 'is-negative');
+    $('#summaryNfDuration').textContent = '00:00';
+    $('#summaryNfRate').textContent = '0 %';
+    $('#summaryNfBarFill').style.width = '0%';
     $('#summaryRangeLabel').textContent = '';
     $$('.summary-breakdown', $('#summarySection')).forEach(section => { section.hidden = true; });
     return;
   }
 
   error.hidden = true;
-  const { rows, total, dayCount } = summarizePeriod(startDate, endDate);
+  const { rows, total, dayCount, nonBillableTotal } = summarizePeriod(startDate, endDate);
   const groupTotals = new Map();
   for(const [project, minutes] of rows){
     const group = projectGroup(project);
@@ -1215,7 +1264,7 @@ function updateSummaryUI(){
     row.append(heading, bar, theoretical);
     groupList?.appendChild(row);
   }
-  for(const [project, minutes] of rows){
+  for(const [project, minutes, nonBillableMinutes] of rows){
     const div = document.createElement('div');
     div.className = 'summary-row';
     div.style.setProperty('--project-color', projectColor(project));
@@ -1252,13 +1301,12 @@ function updateSummaryUI(){
     percentageLabel.className = 'summary-percentage';
     percentageLabel.textContent = `${new Intl.NumberFormat('fr-CH', { maximumFractionDigits: 1 }).format(percentage)} %`;
     percentageLabel.title = `Part du temps : ${percentageLabel.textContent}`;
-    const copyButton = document.createElement('button');
-    copyButton.className = 'secondary btn-copy-comments';
-    copyButton.type = 'button';
-    copyButton.title = 'Copier les commentaires de ce projet sur la période';
-    copyButton.textContent = 'Copier les commentaires';
-    copyButton.addEventListener('click', ()=> copyProjectComments(project, copyButton, startDate, endDate));
-    meta.append(percentageLabel, duration, copyButton);
+    const nfRate = minutes ? (nonBillableMinutes / minutes) * 100 : 0;
+    const nfDetail = document.createElement('span');
+    nfDetail.className = 'summary-nf-detail';
+    nfDetail.textContent = `NF ${minutesToHHMM(nonBillableMinutes)} · ${new Intl.NumberFormat('fr-CH', { maximumFractionDigits: 1 }).format(nfRate)} %`;
+    nfDetail.title = 'Durée et taux non facturés pour ce projet';
+    meta.append(percentageLabel, duration, nfDetail);
     div.append(projectBlock, meta);
     list.appendChild(div);
   }
@@ -1278,6 +1326,10 @@ function updateSummaryUI(){
     : overtime < 0
       ? 'Temps restant avant d’atteindre le temps théorique'
       : 'Le temps total correspond au temps théorique';
+  const globalNfRate = total ? (nonBillableTotal / total) * 100 : 0;
+  $('#summaryNfDuration').textContent = minutesToHHMM(nonBillableTotal);
+  $('#summaryNfRate').textContent = `${new Intl.NumberFormat('fr-CH', { maximumFractionDigits: 1 }).format(globalNfRate)} %`;
+  $('#summaryNfBarFill').style.width = `${globalNfRate}%`;
   $('#summaryRangeLabel').textContent = startDate === endDate
     ? formatSummaryDate(startDate)
     : `Du ${formatSummaryDate(startDate)} au ${formatSummaryDate(endDate)}`;
@@ -2132,12 +2184,14 @@ async function copyText(text){
   return ok;
 }
 
-async function copyProjectComments(projectDisplayName, btn, startDate = state.date, endDate = state.date){
+async function copyProjectComments(projectDisplayName, btn, startDate = state.date, endDate = state.date, nonBillable = null){
   const isSansProjet = (projectDisplayName || '').trim() === 'Sans projet';
   const matched = storedDaysInRange(startDate, endDate).flatMap(day =>
     (day.data.entries||[]).filter(e=>{
       const p = (e.project||'').trim();
-      return isSansProjet ? p === '' : p === projectDisplayName;
+      const sameProject = isSansProjet ? p === '' : p === projectDisplayName;
+      const sameBillingType = nonBillable === null || Boolean(e.nonBillable) === nonBillable;
+      return sameProject && sameBillingType;
     })
   );
   const comments = matched.map(e => (e.comment||'').trim()).filter(Boolean);
