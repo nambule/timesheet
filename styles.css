@@ -940,3 +940,10 @@ input[type="date"]:focus, input[type="text"]:focus{outline:none;border-color:tra
   .entries-header, .entry{grid-template-columns:1fr 1.5fr 2.5fr 1fr 76px}
 }
 /* (reverted) per-project buttons removed */
+
+/* Explicit chronological repositioning beside the edited time. */
+.field.start{flex-direction:column;align-items:flex-start;justify-content:center;gap:4px}
+.btn-reposition{font-size:11px;padding:3px 7px;color:var(--accent, #6d4aff);background:transparent;border:1px solid var(--border);border-radius:6px;cursor:pointer}
+.btn-reposition[hidden]{display:none}
+.btn-reposition:hover{background:rgba(124,58,237,.08)}
+.btn-reposition:focus-visible{outline:2px solid var(--accent, #6d4aff);outline-offset:2px}

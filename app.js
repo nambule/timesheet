@@ -3,8 +3,6 @@
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
-const START_SORT_DEBOUNCE_MS = 400;
-const IMMEDIATE_SORT_TRIGGERS = ['btn-start-inc', 'btn-start-dec'];
 const GROUP_COLOR_PALETTE = ['#6d4aff', '#0f8fa3', '#d97706', '#2563eb', '#be185d', '#4f46e5', '#0f766e'];
 const DEFAULT_PROJECTS = ['Projet Alpha', 'Projet Beta', 'Interne', 'Administratif'];
 const DEFAULT_COMMENT_SHORTCUTS = ['Réunion', 'Suivi', 'Préparation', 'Documentation', 'Support'];
@@ -361,15 +359,6 @@ const state = {
   timePicker: { el: null, currentInput: null },
   rounding: {}, // ephemeral per-entry rounding (keyboard minutes): { [id]: { stage, lastDir, at } }
   roundingStart: {}, // per-entry rounding state for Start +/- buttons
-  sortPending: false,
-  sortDebounceHandle: null,
-  sortPendingFocusId: null,
-  sortPendingControlSelector: null,
-  // Enhanced reordering tracking
-  isImmediateSort: false,
-  movementDirection: null, // 'up' or 'down'
-  lastSortedEntry: null, // Track last moved entry for animation
-  showMovementIndicators: true,
   ghostPlaceholder: null,
   ghostPlaceholderTimer: null,
 };
@@ -544,7 +533,7 @@ function render(){
         e.start = nowRoundedHHMM();
         ensureUniqueStart(e);
         delete state.rounding[e.id]; delete state.roundingStart[e.id];
-        resortEntriesWithGhost(e.id);
+        refreshStartUI();
         openTimePickerForEntry(e.id);
         return;
       }
@@ -555,7 +544,7 @@ function render(){
         e.start = nowRoundedHHMM();
         ensureUniqueStart(e);
         delete state.rounding[e.id]; delete state.roundingStart[e.id];
-        resortEntriesWithGhost(e.id);
+        refreshStartUI();
         openTimePickerForEntry(e.id);
         return;
       }
@@ -584,8 +573,7 @@ function render(){
       // Reset rounding stages for this entry after manual change
       delete state.rounding[e.id];
       delete state.roundingStart[e.id];
-      cancelDeferredSort();
-      resortEntriesWithGhost(e.id);
+      refreshStartUI();
     });
     // no inputEnd change
     // no custom suggestion popover for project
@@ -626,6 +614,7 @@ function render(){
       updateDailyRecapUI();
       updateSummaryUI();
     });
+    $('.btn-reposition', node).addEventListener('click', ()=> repositionEntry(e.id));
     btnDel.addEventListener('click', ()=> removeEntry(e.id));
 
     // no custom suggestion click handlers
@@ -638,6 +627,7 @@ function render(){
 
     list.appendChild(node);
   });
+  updateRepositionButtons();
   renderGhostPlaceholder(list);
   updateDailyRecapUI();
 }
@@ -691,18 +681,22 @@ function renderGhostPlaceholder(list){
   }, 1200);
 }
 
-function resortEntriesWithGhost(entryId){
-  const snapshot = entryId ? captureGhostPlaceholderSnapshot(entryId) : null;
-  sortEntriesByStartInPlace();
+function repositionEntry(entryId){
+  const index = state.data.entries.findIndex(entry => entry.id === entryId);
+  if(index < 0) return;
+  const target = entryTargetIndex(state.data.entries[index]);
+  if(target === index) return;
+  const snapshot = captureGhostPlaceholderSnapshot(entryId);
+  const [entry] = state.data.entries.splice(index, 1);
+  state.data.entries.splice(target, 0, entry);
+  state.ghostPlaceholder = snapshot;
+  hideTimePicker();
   persist();
-  if(snapshot && entryId){
-    const newIndex = state.data.entries.findIndex(entry => entry.id === entryId);
-    if(newIndex !== -1 && newIndex !== snapshot.index){
-      state.ghostPlaceholder = snapshot;
-    }
-  }
   render();
   updateSummaryUI();
+  const row = findRow(entryId);
+  $('.input-project', row)?.focus();
+  row?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 }
 
 function openTimePickerForEntry(entryId){
@@ -726,9 +720,8 @@ function addEntry(prefill={}){
       ? prefill.start
       : (isToday ? nowRoundedHHMM() : ''),
   };
-  state.data.entries.push(entry);
+  state.data.entries.unshift(entry);
   ensureUniqueStart(entry);
-  sortEntriesByStartInPlace();
   persist();
   render();
   setFocused(entry.id);
@@ -765,146 +758,6 @@ function removeEntry(id){
 
 // duplicate feature removed
 
-function scheduleDeferredSort(focusId, controlSelector, isImmediate = false){
-  if(state.sortDebounceHandle){
-    clearTimeout(state.sortDebounceHandle);
-  }
-  
-  if(isImmediate){
-    // Immediate sorting for quick adjustments
-    state.isImmediateSort = true;
-    performEnhancedSort(focusId, controlSelector);
-  } else {
-    // Debounced sorting for manual typing
-    state.sortDebounceHandle = setTimeout(()=> flushDeferredSort(), START_SORT_DEBOUNCE_MS);
-    state.sortPending = true;
-    if(focusId){
-      state.sortPendingFocusId = focusId;
-    }
-    if(controlSelector){
-      state.sortPendingControlSelector = controlSelector;
-    }
-  }
-}
-
-function cancelDeferredSort(){
-  if(state.sortDebounceHandle){
-    clearTimeout(state.sortDebounceHandle);
-    state.sortDebounceHandle = null;
-  }
-  state.sortPending = false;
-  state.sortPendingFocusId = null;
-  state.sortPendingControlSelector = null;
-  state.isImmediateSort = false;
-}
-
-function performEnhancedSort(focusId, controlSelector, movementDirection = null){
-  const entryList = $('#entryList');
-  const placeholderSnapshot = focusId ? captureGhostPlaceholderSnapshot(focusId) : null;
-  
-  // Show visual feedback during sorting
-  if(entryList){
-    entryList.classList.add('sorting');
-  }
-  
-  // Track the entry being moved for animation
-  if(focusId && movementDirection){
-    state.movementDirection = movementDirection;
-    state.lastSortedEntry = focusId;
-  }
-  
-  // Perform the actual sorting
-  sortEntriesByStartInPlace();
-  persist();
-  if(placeholderSnapshot && focusId){
-    const newIndex = state.data.entries.findIndex(entry => entry.id === focusId);
-    if(newIndex !== -1 && newIndex !== placeholderSnapshot.index){
-      state.ghostPlaceholder = placeholderSnapshot;
-    }
-  }
-  
-  // Render with animation
-  render();
-  updateSummaryUI();
-  
-  // Clean up visual feedback
-  if(entryList){
-    setTimeout(() => {
-      entryList.classList.remove('sorting');
-    }, 300);
-  }
-  
-  // Enhanced focus management
-  if(focusId){
-    const row = findRow(focusId);
-    if(row){
-      // Add focus animation
-      row.classList.add('focused-after-sort');
-      
-      // Focus the appropriate control
-      if(controlSelector){
-        const btn = row.querySelector(controlSelector);
-        btn?.focus();
-      }
-      
-      // Remove animation class after animation completes
-      setTimeout(() => {
-        row.classList.remove('focused-after-sort');
-      }, 800);
-    }
-  }
-}
-
-function flushDeferredSort(){
-  if(state.sortDebounceHandle){
-    clearTimeout(state.sortDebounceHandle);
-    state.sortDebounceHandle = null;
-  }
-  if(!state.sortPending) return;
-  state.sortPending = false;
-  const focusId = state.sortPendingFocusId;
-  const controlSelector = state.sortPendingControlSelector;
-  state.sortPendingFocusId = null;
-  state.sortPendingControlSelector = null;
-  const placeholderSnapshot = focusId ? captureGhostPlaceholderSnapshot(focusId) : null;
-  
-  // Add visual feedback during reordering
-  const entryList = $('#entryList');
-  if(entryList){
-    entryList.classList.add('sorting');
-  }
-  
-  // Small delay to show the sorting state
-  setTimeout(() => {
-    sortEntriesByStartInPlace();
-    persist();
-    if(placeholderSnapshot && focusId){
-      const newIndex = state.data.entries.findIndex(entry => entry.id === focusId);
-      if(newIndex !== -1 && newIndex !== placeholderSnapshot.index){
-        state.ghostPlaceholder = placeholderSnapshot;
-      }
-    }
-    render();
-    updateSummaryUI();
-    
-    if(entryList){
-      entryList.classList.remove('sorting');
-    }
-    
-    if(focusId){
-      const row = findRow(focusId);
-      // Keep the same row highlighted/focused after resort
-      if(row){
-        row.classList.add('focused');
-        if(controlSelector){
-          const btn = row.querySelector(controlSelector);
-          btn?.focus();
-        }
-      }
-    }
-  }, 150);
-}
-
 function adjustMinutes(id, delta){
   // Repurpose +/- to shift the start time of the focused entry
   adjustStart(id, delta);
@@ -920,12 +773,7 @@ function adjustStart(id, delta){
   e.start = minutesToHHMMDay(startMNew);
   ensureUniqueStart(e, dir);
   delete state.roundingStart[id];
-  persist();
-  
-  // Determine movement direction for immediate visual feedback
-  const newIndex = state.data.entries.findIndex(entry => entry.id === e.id);
-  // For immediate feedback, we'll sort and render immediately for +/- button clicks
-  performEnhancedSort(e.id, delta >= 0 ? '.btn-start-inc' : '.btn-start-dec', dir > 0 ? 'down' : 'up');
+  refreshStartUI();
 }
 
 // removed adjustEnd and closeOpenTasksNow (no end time in the model)
@@ -934,23 +782,49 @@ function ensureUniqueStart(entry, preferredDir = 1){
   return hasStartConflict(entry);
 }
 
-// sort entries in place by start time descending (newest first, invalid/empty start goes first, keep relative order)
-function sortEntriesByStartInPlace(){
-  const withIdx = state.data.entries.map((e, i)=>({e,i}));
-  withIdx.sort((a,b)=>{
-    const as = /^\d{1,2}:\d{2}$/.test(a.e.start||'');
-    const bs = /^\d{1,2}:\d{2}$/.test(b.e.start||'');
-    if(as && bs){
-      const da = hhmmToMinutes(a.e.start);
-      const db = hhmmToMinutes(b.e.start);
-      if(da !== db) return db - da;
-      return a.i - b.i; // stable for identical starts
-    }
-    if(as && !bs) return 1;
-    if(!as && bs) return -1;
-    return a.i - b.i;
+// Compare chronological ranks without changing the saved display order.
+function entryTargetIndex(entry){
+  const entries = state.data.entries;
+  const index = entries.indexOf(entry);
+  if(!/^\d{1,2}:\d{2}$/.test(entry.start || '')) return index;
+  const minutes = hhmmToMinutes(entry.start);
+  return entries.filter((other, i) => other !== entry && (
+    !/^\d{1,2}:\d{2}$/.test(other.start || '') ||
+    hhmmToMinutes(other.start) > minutes ||
+    (hhmmToMinutes(other.start) === minutes && i < index)
+  )).length;
+}
+
+function updateRepositionButtons(){
+  state.data.entries.forEach((entry, index) => {
+    const row = findRow(entry.id);
+    const button = row ? $('.btn-reposition', row) : null;
+    if(!button) return;
+    const target = entryTargetIndex(entry);
+    button.hidden = target === index;
+    button.textContent = target < index ? '↑ Repositionner' : '↓ Repositionner';
+    button.title = 'Repositionner cette tâche selon son heure (les plus récentes en haut)';
+    button.setAttribute('aria-label', 'Repositionner cette tâche selon son heure');
   });
-  state.data.entries = withIdx.map(x=>x.e);
+}
+
+// Refresh the existing controls so editing never replaces or moves a row.
+function refreshStartUI(){
+  persist();
+  state.data.entries.forEach(entry => {
+    const row = findRow(entry.id);
+    if(!row) return;
+    const input = $('.input-start', row);
+    input.value = entry.start || '';
+    const conflict = hasStartConflict(entry);
+    row.classList.toggle('has-start-conflict', conflict);
+    row.classList.toggle('has-start-conflict-label', isLastStartConflict(entry));
+    input.setAttribute('aria-invalid', String(conflict));
+    input.title = conflict ? 'Deux entrées ont la même heure de début. Modifiez-en une.' : '';
+    $('.duration-min', row).textContent = minutesToHHMM(visibleMinutes(entry));
+  });
+  updateDailyRecapUI();
+  updateSummaryUI();
 }
 
 // timer feature removed (toggleTimer/stopAllTimers)
@@ -965,6 +839,7 @@ function findRow(id){ return $(`.entry[data-id="${id}"]`); }
 
 function persist(){
   saveDay(state.date, state.data);
+  updateRepositionButtons();
 }
 
 // -------- Summary --------
@@ -1642,10 +1517,8 @@ function init(){
   const datePicker = $('#datePicker');
   datePicker.value = state.date;
   datePicker.addEventListener('change', ()=>{
-    flushDeferredSort();
     state.date = datePicker.value || todayISO();
     state.data = loadDay(state.date);
-    sortEntriesByStartInPlace();
     // Ensure at least one empty entry on a new day
     if((state.data.entries||[]).length === 0){
       addEmptyEntry();
@@ -1744,7 +1617,6 @@ function init(){
   }
   saveMeta(state.meta);
   
-  sortEntriesByStartInPlace();
   if((state.data.entries||[]).length === 0){
     addEmptyEntry();
   } else {
@@ -1861,14 +1733,12 @@ function hideTimePicker(){
 
 // ------ Helpers for day navigation & project list ------
 function shiftDay(delta){
-  flushDeferredSort();
   const d = new Date(state.date);
   d.setDate(d.getDate() + delta);
   const pad = (n)=> String(n).padStart(2,'0');
   state.date = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
   $('#datePicker').value = state.date;
   state.data = loadDay(state.date);
-  sortEntriesByStartInPlace();
   if((state.data.entries||[]).length === 0){
     addEmptyEntry();
     return; // addEmptyEntry handles render/focus

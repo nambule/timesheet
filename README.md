@@ -7,6 +7,7 @@ Timesheet est une application web légère pour saisir son temps de travail au f
 ### Saisir sa journée
 
 - Ajouter rapidement une activité, un projet et un commentaire.
+- Modifier une heure sans déplacer la tâche ; utiliser « Repositionner » sous l’heure pour la replacer volontairement (les plus récentes en haut). L’ordre est conservé entre les visites et les nouvelles tâches sont ajoutées en haut.
 - Marquer individuellement une activité comme non facturée (NF).
 - Calculer automatiquement la durée d’une activité jusqu’au début de la suivante.
 - Ajouter des pauses, exclues des statistiques et des exports de temps travaillé.
